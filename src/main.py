@@ -1,16 +1,16 @@
 import asyncio
-from datetime import timedelta, datetime
 import websockets
 import json
-import os
 import requests
-from utils.helpers import save_data_sample
+from utils.helpers import path_initial_shapshot
+
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
 ws_buffer=[]
-dir_path = (os.path.dirname(os.path.abspath('__main__')))
+
 
 async def ws_ingestion(queue, websocket):
+    # Infinite ingestion function
     while True:
         response = await websocket.recv() # The first response from the server is the subscription confirmation not the actual data
         ws_stream = json.loads(response)
@@ -20,6 +20,7 @@ async def to_do_processing_logic(ws_stream):
     pass
 
 async def ws_processing(queue):
+    # Infinite processing function
     while True:
         ws_stream =  await queue.get()
         await to_do_processing_logic(ws_stream) #tbc it we should await here - depends on inner logic
@@ -33,20 +34,32 @@ async def subscribe_websocket(websocket):
     print ("Subscribed to the channel")
 
 
-
 async def run_code():
     try:
         async with websockets.connect(uri) as websocket:
             print("Connected to server")
+            #Run outside the queue to guarantee the ordering
             await subscribe_websocket(websocket)
 
             queue =  asyncio.Queue()
             ws_ingestion_task = asyncio.create_task(ws_ingestion(queue,websocket))
             ws_processing_task = asyncio.create_task(ws_processing(queue))
             
+            # Run coroutines for 5 sec - prevents an infinite loop by raising a TimeOut Error
+            try: 
+                 await asyncio.wait_for(
+                      asyncio.gather(ws_ingestion_task, ws_processing_task), 
+                      timeout = 5
+                 )
+            except asyncio.TimeoutError:
+                 print('Runtime time out')
+
+            # Cancel infinite coroutines as wait_for does't cancel them
             await asyncio.sleep(2)
             ws_ingestion_task.cancel()
             ws_processing_task.cancel()
+
+            #Wait for tasks completion - in this case TimeOut error
             await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
             
             print('All done')
@@ -57,41 +70,19 @@ async def run_code():
         print("WebSocket connection closed")
 
 
-async def run_for_duration(duration_seconds = 1):
-
-    start_time = datetime.now()
-    end_time = start_time + timedelta(duration_seconds)
-    while datetime.now() < end_time:
-        await run_code()
-    print ('Running is done for the test time')
+asyncio.run(run_code())
 
 
+def get_order_book():
+    snapshot = requests.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20').json()
+    with open ((path_initial_shapshot), 'w') as file:
+        json.dump(snapshot, file)
+    print('Order book is saved')
 
-asyncio.run(run_for_duration())
-
-
-# def get_order_book_snapshot():
-#     snapshot = requests.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20').json()
-#     with open ((dir_path +'/data/initial_snapshot.json'), 'w') as file:
-#         json.dump(snapshot, file)
-#     print('Job done')
-
-# get_order_book_snapshot()     
+get_order_book()     
 
 
 
-
-# async def main():
-#     queue = asyncio.Queue()
-#     ws_ingestion_task = asyncio.create.task(ws_ingestion(queue))
-#     ws_processing_task = asyncio.create_task(ws_processing(queue))
-#     await asyncio.gather(ws_ingestion_task, ws_processing_task)
-
-
-
-
-
-# get_order_book_snapshot()
 
 
 # # Establish a websocket connection to a crypto exchange and ensure it closes properly ✅ 
@@ -111,18 +102,6 @@ asyncio.run(run_for_duration())
             # else:
             #     print('Wrong response from the server')
  
- 
-# async def pop_earliest_stream(ws_buffer):
-#     try:
-#         return ws_buffer[0], ws_buffer[1:]
-#     except IndexError:
-#         print('The buffer is empty')
-
-
-# while queue:
-#     item, queue = pop_first(queue)
-#     process(item)
-
 
 
 
