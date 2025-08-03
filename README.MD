@@ -1,3 +1,4 @@
+## Work in progress
 ## Project overview
 Create and maintain a local copy of the trading order book.
 ## Potential extension 
