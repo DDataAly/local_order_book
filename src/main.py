@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import json
 import requests
-from utils.helpers import path_initial_shapshot
+from utils.helpers import path_initial_shapshot, path_match_ws
 
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
@@ -31,34 +31,35 @@ async def ws_ingestion(queue, websocket):
     while True:
         print ('Trying to ingest')
         response = await websocket.recv() 
-        # print('Trying to parse')
-        # ws_stream = json.loads(response)
         print('Trying to put in the queue')
         await queue.put(response)
 
 
 
-async def is_ws_in_order_book(response, queue, replace_order_book = True, order_book_ts = None) -> bool:
-    parsed = json.loads(response)
-    ws_first_update_id = parsed['U']
-    ws_final_update_id = parsed ['u']
-    if replace_order_book:
-        order_book_ts = get_order_book()
-    is_aligned = False 
+async def is_ws_in_order_book(response, queue) -> bool:
+    order_book_ts = get_order_book()
+    print('Got new order book')
+    while True:
+        parsed = json.loads(response)
+        ws_first_update_id = parsed['U']
+        ws_final_update_id = parsed ['u']
 
-    while is_aligned == False:
-        if ws_first_update_id <= order_book_ts < ws_final_update_id:
-            is_aligned = True
+        if ws_first_update_id <= order_book_ts <= ws_final_update_id:
+            print (ws_first_update_id)
+            print (ws_final_update_id)
+            print(order_book_ts)
+
+            print(order_book_ts-ws_first_update_id)
+            print(order_book_ts-ws_final_update_id)
+            return True
     
-        if order_book_ts < ws_first_update_id:
+        elif order_book_ts < ws_first_update_id:
             print('Replacing order book')
-            return await is_ws_in_order_book(response, queue, replace_order_book = True)
+            order_book_ts = get_order_book()
 
-        if ws_final_update_id <= order_book_ts:
+        elif ws_final_update_id <= order_book_ts:
             print('Requesting a new ws')
             response =  await queue.get() 
-            return await is_ws_in_order_book(response, queue, replace_order_book = False, order_book_ts=order_book_ts)     
-    return is_aligned
 
 
 async def to_do_processing_logic():
@@ -71,9 +72,12 @@ async def ws_processing(queue):
     while continue_search:
         ws_stream =  await queue.get()
         is_aligned = await is_ws_in_order_book(ws_stream, queue)
-        print (is_aligned)
+
         if is_aligned == True:
             print ('The match is found')
+            with open (path_match_ws, 'w') as file:
+                json.dump(ws_stream, file) 
+
             continue_search = False
         else:
             continue
@@ -126,10 +130,8 @@ def get_order_book() -> int:
     with open ((path_initial_shapshot), 'w') as file:
         json.dump(snapshot, file)
     print('Order book is saved')
-    order_book_timestamp = snapshot.get("lastUpdateId")
-    return order_book_timestamp
-
-get_order_book()     
+    order_book_ts = snapshot.get("lastUpdateId")
+    return order_book_ts
 
 asyncio.run(run_code())
 
@@ -152,3 +154,27 @@ asyncio.run(run_code())
 # project_directory = os.path.dirname(os.path.abspath('__main__'))
 # path = os.makedirs((project_directory+'/data/ws_updates'), exist_ok=True)
 # print(project_directory)
+
+
+# Recursion version
+# async def is_ws_in_order_book(response, queue, replace_order_book = True, order_book_ts = None) -> bool:
+#     parsed = json.loads(response)
+#     ws_first_update_id = parsed['U']
+#     ws_final_update_id = parsed ['u']
+#     if replace_order_book:
+#         order_book_ts = get_order_book()
+#     is_aligned = False 
+
+#     while is_aligned == False:
+#         if ws_first_update_id <= order_book_ts < ws_final_update_id:
+#             is_aligned = True
+    
+#         if order_book_ts < ws_first_update_id:
+#             print('Replacing order book')
+#             return await is_ws_in_order_book(response, queue, replace_order_book = True)
+
+#         if ws_final_update_id <= order_book_ts:
+#             print('Requesting a new ws')
+#             response =  await queue.get() 
+#             return await is_ws_in_order_book(response, queue, replace_order_book = False, order_book_ts=order_book_ts)     
+#     return is_aligned
