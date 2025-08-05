@@ -31,9 +31,17 @@ async def is_subscription_confirmed(response) -> bool:
 async def get_first_message_id(buffer):
     while not buffer:
         await asyncio.sleep(0.01)
-    parsed = json.loads(buffer[0])
-    print(f'First message is {parsed}')
-    return parsed['U']
+    for message in buffer:    
+        try:
+            parsed = json.loads(message)
+        except json.JSONDecodeError:
+            continue    
+        if 'U' in parsed:
+            print(f'First depth update message in the stream is {parsed}')
+            return parsed["U"]
+        else:
+            print(f'Skipping non-depthUpdate message: {parsed}')
+        await asyncio.sleep(0.01)
 
 
 async def ws_ingestion(websocket,buffer):
@@ -49,7 +57,17 @@ async def find_matching_messsage(order_book_last_update_id,buffer, event, match)
         await asyncio.sleep (0.1)
         while buffer:
             message = buffer[0]
-            parsed = json.loads(message)
+           
+            try:
+                parsed = json.loads(message)
+            except json.JSONDecodeError:
+                buffer.popleft()
+                continue
+           
+            if 'u' not in parsed:
+                buffer.popleft()
+                continue
+
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
                 match['content'] = parsed
