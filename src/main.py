@@ -3,9 +3,11 @@ import websockets
 import json
 import requests
 from utils.helpers import path_initial_shapshot, path_match_ws
+from collections import deque
 
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
+
 
 async def send_subscription_request(websocket):
     await websocket.send(
@@ -26,62 +28,45 @@ async def is_subscription_confirmed(response) -> bool:
     return False
 
 
-async def ws_ingestion(queue, websocket):
+async def get_first_message_id(buffer):
+    while not buffer:
+        await asyncio.sleep(0.01)
+    parsed = json.loads(buffer[0])
+    print(f'First message is {parsed}')
+    return parsed['U']
+
+
+async def ws_ingestion(websocket,buffer):
     # Infinite ingestion function
     while True:
         print ('Trying to ingest')
         response = await websocket.recv() 
-        print('Trying to put in the queue')
-        await queue.put(response)
+        print('Trying to put in the buffer')
+        buffer.append(response)
 
+async def find_matching_messsage(order_book_last_update_id,buffer, event, match):
+    while not event.is_set():
+        await asyncio.sleep (0.1)
+        while buffer:
+            message = buffer[0]
+            parsed = json.loads(message)
+            message_final_update_id = parsed ['u']
+            if message_final_update_id > order_book_last_update_id:
+                match['content'] = parsed
+                event.set()
+                print(f'Match is found: {match}')
+                return   # Not returning anything, using an event as a flag to confirm the match
+            else:
+                buffer.popleft()
+        print('No matching message found in the buffer yet.')
 
-
-async def is_ws_in_order_book(response, queue) -> bool:
-    order_book_ts = get_order_book()
-    print('Got new order book')
-    while True:
-        parsed = json.loads(response)
-        ws_first_update_id = parsed['U']
-        ws_final_update_id = parsed ['u']
-
-        if ws_first_update_id <= order_book_ts <= ws_final_update_id:
-            print (ws_first_update_id)
-            print (ws_final_update_id)
-            print(order_book_ts)
-
-            print(order_book_ts-ws_first_update_id)
-            print(order_book_ts-ws_final_update_id)
-            return True
-    
-        elif order_book_ts < ws_first_update_id:
-            print('Replacing order book')
-            order_book_ts = get_order_book()
-
-        elif ws_final_update_id <= order_book_ts:
-            print('Requesting a new ws')
-            response =  await queue.get() 
-
-
+        
 async def to_do_processing_logic():
     pass
 
 
-async def ws_processing(queue):
+async def ws_processing(buffer):
     # Infinite processing function
-    continue_search = True
-    while continue_search:
-        ws_stream =  await queue.get()
-        is_aligned = await is_ws_in_order_book(ws_stream, queue)
-
-        if is_aligned == True:
-            print ('The match is found')
-            with open (path_match_ws, 'w') as file:
-                json.dump(ws_stream, file) 
-
-            continue_search = False
-        else:
-            continue
-
     await to_do_processing_logic()
 
 
@@ -93,25 +78,52 @@ async def run_code():
             response = await send_subscription_request(websocket)
             if await is_subscription_confirmed(response):
                 print ('Subscription is confirmed')
-
-
-            queue =  asyncio.Queue()
-            ws_ingestion_task = asyncio.create_task(ws_ingestion(queue,websocket))
-            ws_processing_task = asyncio.create_task(ws_processing(queue))
             
+            buffer = deque([])
+
+            
+            ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
+            order_book_last_update_id = get_order_book()  
+            first_received_message_id = await get_first_message_id(buffer)
+            ws_processing_task = None
+        
+
+            while order_book_last_update_id < first_received_message_id:
+                order_book_last_update_id = get_order_book() 
+
+            match_event = asyncio.Event()
+            match_content = {}    
+            
+            find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, match_event, match_content))
+            await match_event.wait()
+
+            if match_event.is_set():
+                ws_processing_task = asyncio.create_task(ws_processing(buffer))
+            else:
+                print('No match found, nothing to process yet')        
+
+
             # Run coroutines for 5 sec - prevents an infinite loop by raising a TimeOut Error
             try: 
-                 await asyncio.wait_for(
-                      asyncio.gather(ws_ingestion_task, ws_processing_task), 
-                      timeout = 5
-                 )
+                tasks =[ws_ingestion_task]
+                if ws_processing_task:
+                    tasks.append (ws_processing_task)
+                if find_match_task:
+                    tasks.append (find_match_task)
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks), 
+                    timeout = 10
+                )
+                       
             except asyncio.TimeoutError:
                  print('Runtime time out')
 
             # Cancel infinite coroutines as wait_for does't cancel them
             await asyncio.sleep(2)
             ws_ingestion_task.cancel()
-            ws_processing_task.cancel()
+            find_match_task.cancel()
+            if ws_processing_task:
+                ws_processing_task.cancel()
 
             #Wait for tasks completion - in this case TimeOut error
             await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
@@ -178,3 +190,6 @@ asyncio.run(run_code())
 #             response =  await queue.get() 
 #             return await is_ws_in_order_book(response, queue, replace_order_book = False, order_book_ts=order_book_ts)     
 #     return is_aligned
+
+
+ 
