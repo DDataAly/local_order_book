@@ -209,7 +209,7 @@ def get_order_book() -> int:
     order_book_ts = snapshot.get("lastUpdateId")
     return order_book_ts
 
-asyncio.run(run_code())
+asyncio.run(run_code()) #Creates the event loop and runs coroutines 
 
 
 
