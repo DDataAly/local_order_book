@@ -69,10 +69,10 @@ async def is_subscription_confirmed(response) -> bool:
 
 async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
     """
-    Indefinite function which receives order book prices and quantity updates and adds them to buffer
+    Infinite function which receives order book prices and quantity updates and adds them to buffer
     Args:
         websocket: The WebSocket connection to Binance
-        buffer: deque to keep incoming steam messages
+        buffer: a deque to keep incoming WebSocket stream messages
     Returns:
         Nothing 
     """
@@ -81,7 +81,16 @@ async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deq
         response = await websocket.recv() 
         buffer.append(response)
 
-async def get_first_message_id(buffer):
+async def get_first_depth_update_id(buffer: deque[str]) -> int:
+    """
+    Loops through messages in the buffer till finds a valid depth update message.
+    Extracts the ID of the first update in the first valid depth update message,
+    which is used to synchronise the WebSocket stream with the API order book snapshot.
+    Args:
+        buffer: a deque to keep incoming WebSocket stream messages
+    Returns:
+        int - The 'U' value (first update ID) from the first valid depth update message.
+    """
     while not buffer:
         await asyncio.sleep(0.01)
     for message in buffer:    
@@ -148,7 +157,7 @@ async def run_code():
             
             ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
             order_book_last_update_id = get_order_book()  
-            first_received_message_id = await get_first_message_id(buffer)
+            first_received_message_id = await get_first_depth_update_id(buffer)
             ws_processing_task = None
         
 
