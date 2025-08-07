@@ -1,5 +1,6 @@
 import pytest_asyncio
 import pytest
+import logging
 from src.order_book.order_book_class import OrderBook
 
 @pytest.fixture
@@ -124,14 +125,93 @@ class TestUpdateOrderBook:
         assert result == {114000.57000000: 0.30000000, 113688.21000000 : 0.40000000}
 
 
-    @pytest.mark.it('handles errors if WebSocket stream message is of the wrong type or format')
+    @pytest.mark.it('logs errors if WebSocket stream message is of the wrong type or format')
     @pytest.mark.asyncio
-    async def test_parses_message(self, short_message):
-        order_book = OrderBook({"lastUpdateId": 74105025813, 
-                        "bids": [], 
-                        "asks": []})
-        result = await order_book.update_order_book_bids(short_message)
-        assert result == {114000.57000000: 0.30000000, 113688.21000000 : 0.40000000}
-    
+    async def test_logs_errors(self, small_order_book, caplog):
+        message = {'e': 'depthUpdate', 
+            'E': 1754423900214, 
+            's': 'BTCUSDT', 
+            'U': 74105025814, 
+            'u': 74105025843, 
+            'b': [['some_text', '0.30000000']],
+            'a': []
+            }
+        caplog.set_level(logging.WARNING, logger="src.order_book.order_book_class")
+        result = await small_order_book.update_order_book_bids(message)
+        assert 'Bad message received, skipping' in caplog.text 
 
+    @pytest.mark.it('removes bids from the order book if qty for this bid in the WebSocket stream message is zero')
+    @pytest.mark.asyncio
+    async def test_removes_zero_qty_bids(self, small_order_book):
+        message = {'e': 'depthUpdate', 
+            'E': 1754423900214, 
+            's': 'BTCUSDT', 
+            'U': 74105025814, 
+            'u': 74105025843, 
+            'b': [["113678.84000000", "0.00000000"]],
+            'a': []
+            }  
+        result = await small_order_book.update_order_book_bids (message)
+        assert result == {113678.85000000: 7.25330000}
+
+    @pytest.mark.it('ignores bids in the WebSocket stream message with zero qty if they\'re not in the order book')
+    @pytest.mark.asyncio
+    async def test_ignores_non_present_zero_qty_bids(self, small_order_book):
+        # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
+        message = {'e': 'depthUpdate', 
+            'E': 1754423900214, 
+            's': 'BTCUSDT', 
+            'U': 74105025814, 
+            'u': 74105025843, 
+            'b': [["113680.84000000", "0.00000000"],["113300.84000000", "0.00000000"]],
+            'a': []
+            }  
+        result = await small_order_book.update_order_book_bids (message)
+        assert result == {113678.85000000: 7.25330000, 113678.84000000 : 0.77360000} 
+
+    @pytest.mark.it('if bid is present in the order book and WebSocket stream message  the qty in the order book becomes equal to qty in the message')
+    @pytest.mark.asyncio
+    async def test_updates_bids_qty(self, small_order_book):
+        message = {'e': 'depthUpdate', 
+            'E': 1754423900214, 
+            's': 'BTCUSDT', 
+            'U': 74105025814, 
+            'u': 74105025843, 
+            'b': [["113678.85000000", "2.00000000"]],
+            'a': []
+            }  
+        result = await small_order_book.update_order_book_bids (message)
+        assert result == {113678.85000000: 2.00000000,
+                          113678.84000000: 0.77360000}   
+
+    @pytest.mark.it('adds bids in the WebSocket stream message with non-zero qty if they\'re not in the order book')
+    @pytest.mark.asyncio
+    async def test_adds_non_present_non_zero_qty_bids(self, small_order_book):
+        # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
+        message = {'e': 'depthUpdate', 
+            'E': 1754423900214, 
+            's': 'BTCUSDT', 
+            'U': 74105025814, 
+            'u': 74105025843, 
+            'b': [["113680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]],
+            'a': []
+            }  
+        result = await small_order_book.update_order_book_bids (message)
+        assert result == {113678.85000000: 7.25330000, 
+                          113678.84000000 : 0.77360000,
+                          113680.84000000 : 4.00000000,
+                          113300.84000000 : 0.50000000} 
+        
+    @pytest.mark.it('processes messages with different types of updates correctly')
+    @pytest.mark.asyncio
+    async def test_processes_multiple_updates(self, big_order_book, long_message):
+        result = await big_order_book.update_order_book_bids (long_message)
+        assert result == {113678.85000000 : 7.25330000, 
+                        113678.84000000 : 0.77360000, 
+                        113677.94000000 : 0.00005000,
+                        113676.92000000 : 1.00000000, 
+                        113675.73000000 : 0.00007000,
+                        113674.27000000 : 0.00007000,
+                        113688.21000000 : 0.40000000,
+                        113670.84000000 : 0.10000000}
 
