@@ -18,22 +18,40 @@ class OrderBook:
         
     # Maintainig order book
 
-    async def update_order_book_bids(self, message: str) -> dict:
+    async def extract_order_book_bids_asks (self) -> tuple[dict, dict]:
         self.ob_bids = {float(price):float(qty) for [price,qty] in self.content['bids']}
+        self.ob_asks = {float(price):float(qty) for [price,qty] in self.content['asks']}
+        return (self.ob_bids, self.ob_asks)    
+    
+
+    async def update_order_book_bids(self, message: dict) -> dict:
         try:    
-            message_bids = {float(price):float(qty) for [price,qty] in message.get('b')}
+            message_bids = {float(price):float(qty) for [price,qty] in message.get('b',[])}
             print('Updating in progress')
-            for price in message_bids.keys():
-                if message_bids[price] == 0:
+            for price, qty in message_bids.items():
+                if qty == 0:
                     print(f'Deleting {price} from order book if present')
                     self.ob_bids.pop(price,None)
                 else:
-                    self.ob_bids[price] = message_bids[price]
+                    self.ob_bids[price] = qty
                     print(f'Updating/adding {price} in the order book')
         except (TypeError, KeyError, ValueError) as e:
             logger.warning(f'Bad message received, skipping: {e}')    
         return self.ob_bids
     
+
+
+    async def update_order_book_bids(self, message: dict) -> dict:
+    try:
+        message_bids = {float(price): float(qty) for price, qty in message.get('b', [])}
+        for price, qty in message_bids.items():
+            if qty == 0:
+                self.ob_bids.pop(price, None)
+            else:
+                self.ob_bids[price] = qty
+    except (TypeError, KeyError, ValueError) as e:
+        logger.warning(f'Bad message received, skipping: {e}')
+    return self.ob_bids    
     
 
 # print('Updated order book bids')
