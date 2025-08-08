@@ -24,35 +24,35 @@ class OrderBook:
         return (self.ob_bids, self.ob_asks)    
     
 
-    async def update_order_book_bids(self, message: dict) -> dict:
+    async def update_order_book_side(self, message: dict, book_side: str) -> dict:
+        dispatch_table =  {
+            'b' : self.ob_bids,
+            'a' : self.ob_asks    
+            }
+        side = dispatch_table[book_side]
         try:    
-            message_bids = {float(price):float(qty) for [price,qty] in message.get('b',[])}
+            message_side = {float(price):float(qty) for [price,qty] in message.get(book_side,[])}
             print('Updating in progress')
-            for price, qty in message_bids.items():
+            for price, qty in message_side.items():
                 if qty == 0:
                     print(f'Deleting {price} from order book if present')
-                    self.ob_bids.pop(price,None)
+                    side.pop(price,None)
                 else:
-                    self.ob_bids[price] = qty
+                    side[price] = qty
                     print(f'Updating/adding {price} in the order book')
         except (TypeError, KeyError, ValueError) as e:
             logger.warning(f'Bad message received, skipping: {e}')    
-        return self.ob_bids
+        return side
     
 
+    async def update_order_book(self, message: dict) -> dict:
+        for book_side in ['a','b']:
+            await self.update_order_book_side (message, book_side)
 
-    async def update_order_book_bids(self, message: dict) -> dict:
-    try:
-        message_bids = {float(price): float(qty) for price, qty in message.get('b', [])}
-        for price, qty in message_bids.items():
-            if qty == 0:
-                self.ob_bids.pop(price, None)
-            else:
-                self.ob_bids[price] = qty
-    except (TypeError, KeyError, ValueError) as e:
-        logger.warning(f'Bad message received, skipping: {e}')
-    return self.ob_bids    
-    
+
+
+
+
 
 # print('Updated order book bids')
 # for price, qty in order_book_bids_dict.items():
