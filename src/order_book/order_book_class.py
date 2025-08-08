@@ -19,8 +19,11 @@ class OrderBook:
     # Maintainig order book
 
     async def extract_order_book_bids_asks (self) -> tuple[dict, dict]:
-        self.ob_bids = {float(price):float(qty) for [price,qty] in self.content['bids']}
-        self.ob_asks = {float(price):float(qty) for [price,qty] in self.content['asks']}
+        try:
+            self.ob_bids = {float(price):float(qty) for [price,qty] in self.content['bids']}
+            self.ob_asks = {float(price):float(qty) for [price,qty] in self.content['asks']}
+        except (TypeError, KeyError, ValueError) as e:
+            logger.critical (f'Order book snapshot is not valid and can\'t be processed: {e}')
         return (self.ob_bids, self.ob_asks)    
     
 
