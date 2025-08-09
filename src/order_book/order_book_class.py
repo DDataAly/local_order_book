@@ -4,8 +4,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-order_book = {"lastUpdateId": 74105025813, "bids": [["113678.85000000", "7.25330000"], ["113678.84000000", "0.77360000"], ["113678.21000000", "0.01775000"], ["113678.00000000", "0.03190000"], ["113677.99000000", "0.00005000"], ["113677.94000000", "0.00005000"], ["113677.93000000", "0.29045000"], ["113677.59000000", "0.06521000"], ["113677.42000000", "0.08374000"], ["113676.92000000", "0.00010000"], ["113676.60000000", "0.04058000"], ["113676.00000000", "0.00005000"], ["113675.73000000", "0.00007000"], ["113675.59000000", "0.06669000"], ["113675.57000000", "0.02510000"], ["113675.54000000", "0.00005000"], ["113675.11000000", "0.00005000"], ["113675.10000000", "0.31680000"], ["113674.77000000", "0.07648000"], ["113674.27000000", "0.00007000"]], "asks": [["113678.86000000", "1.93563000"], ["113678.87000000", "0.00713000"], ["113679.34000000", "0.00005000"], ["113679.35000000", "0.03677000"], ["113680.00000000", "0.00005000"], ["113681.32000000", "0.00005000"], ["113681.41000000", "0.00005000"], ["113681.42000000", "0.04418000"], ["113682.30000000", "0.00005000"], ["113683.06000000", "0.00085000"], ["113683.82000000", "0.00005000"], ["113684.00000000", "0.00080000"], ["113685.38000000", "0.00200000"], ["113685.71000000", "0.00025000"], ["113686.27000000", "0.00005000"], ["113686.28000000", "0.06912000"], ["113686.32000000", "0.00005000"], ["113686.33000000", "0.12770000"], ["113686.87000000", "0.00005000"], ["113686.88000000", "0.06029000"]]}
-message = {'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 'U': 74105025814, 'u': 74105025843, 'b': [['113678.84000000', '0.1'], ['113644.65000000', '0.04336000'], ['103395.52000000', '0.02640000'], ['114000.57000000', '0.00000000'], ['112809.57000000', '0.00000000'], ['113678.21000000', '0.00000000']], 'a': [['113678.86000000', '1.93563000'], ['113678.87000000', '0.00698000'], ['113689.58000000', '0.00023000'], ['113689.59000000', '0.35536000'], ['113689.88000000', '0.00005000'], ['113689.89000000', '0.29047000'], ['113690.71000000', '0.48505000'], ['113691.75000000', '0.00000000'], ['113705.35000000', '0.31667000'], ['113799.05000000', '0.00000000']]}
+print(logger)
+
+class EmptyOrderBookException(Exception):
+    """Raised when the order book snapshot has no asks or bids values"""
+    
 
 class OrderBook:
     def __init__(self, content:dict = None):
@@ -22,8 +25,14 @@ class OrderBook:
         try:
             self.ob_bids = {float(price):float(qty) for [price,qty] in self.content['bids']}
             self.ob_asks = {float(price):float(qty) for [price,qty] in self.content['asks']}
+            if len(self.ob_bids) == 0 or len(self.ob_asks) == 0:
+                logger.critical ('Order book snapshot doesn\'t contain bids or asks and can\'t be processed')
+                # Need to raise error as the execution of the code can't be continued
+                raise EmptyOrderBookException ("No bids or asks in the order book snapshot")
         except (TypeError, KeyError, ValueError) as e:
+            # Need to raise error as the execution of the code can't be continued 
             logger.critical (f'Order book snapshot is not valid and can\'t be processed: {e}')
+            raise 
         return (self.ob_bids, self.ob_asks)    
     
 
@@ -32,6 +41,7 @@ class OrderBook:
             'b' : self.ob_bids,
             'a' : self.ob_asks    
             }
+        print(dispatch_table)
         side = dispatch_table[book_side]
         try:    
             message_side = {float(price):float(qty) for [price,qty] in message.get(book_side,[])}
@@ -44,6 +54,7 @@ class OrderBook:
                     side[price] = qty
                     print(f'Updating/adding {price} in the order book')
         except (TypeError, KeyError, ValueError) as e:
+            # No need to raise error as we want to continue execution and simply move to the next message
             logger.warning(f'Bad message received, skipping: {e}')    
         return side
     
