@@ -3,7 +3,6 @@ import pytest
 import logging
 from src.order_book.order_book_class import OrderBook, EmptyOrderBookException
 
-#region
 @pytest.fixture
 def small_order_book():
     content = {"lastUpdateId": 74105025813, 
@@ -79,9 +78,7 @@ def long_message():
                 ['113690.71000000', '0.48505000']
                  ]
             }
-#endregion
 
-#region
 @pytest.mark.describe('Order book tests')
 class TestOrderBookInit:
     @pytest.mark.it('should intitialise an order book object')
@@ -206,9 +203,7 @@ class TestExtractOrderBookBidsAsks:
         assert expected_error_message in str(e.value)  
         assert expected_log in caplog.text 
 
-#endregion
 
-#Need to fix tests
 class TestUpdateOrderBookSide:
     @pytest.mark.it('should return a dict when called')
     @pytest.mark.asyncio
@@ -318,4 +313,137 @@ class TestUpdateOrderBookSide:
                         113674.27000000 : 0.00007000,
                         113688.21000000 : 0.40000000,
                         113670.84000000 : 0.10000000}
+        
+class TestUpdateOrderBook:
+    @pytest.mark.it('returns a dictionary with correct keys')
+    @pytest.mark.asyncio
+    async def test_returns_correct_dict(self, small_order_book, short_message):
+        await small_order_book.extract_order_book_bids_asks()
+        result = await small_order_book.update_order_book(short_message)
+        assert isinstance(result, dict)
+        assert {'lastUpdateId', 'bids','asks'}.issubset(set(result.keys()))
+        assert len(result) == 3 
 
+
+    @pytest.mark.it('correctly updates order book content - message with bids only')
+    @pytest.mark.asyncio
+    async def test_updates_ob_bids_only(self, big_order_book, long_message):
+        message = long_message
+        message['a'] = [] 
+        await big_order_book.extract_order_book_bids_asks()
+        result = await big_order_book.update_order_book(message)
+        assert result == {"lastUpdateId": 74105025813, 
+                          "bids" : [
+                            ['113688.21000000' , '0.40000000'],
+                            ['113678.85000000' , '7.25330000'], 
+                            ['113678.84000000' , '0.77360000'], 
+                            ['113677.94000000' , '0.00005000'],
+                            ['113676.92000000' , '1.00000000'], 
+                            ['113675.73000000' , '0.00007000'],
+                            ['113674.27000000' , '0.00007000'],
+                            ['113670.84000000' , '0.10000000']
+                            ],
+                        "asks" : 
+                            [
+                            ["113678.86000000", "1.93563000"], 
+                            ["113679.35000000", "0.03677000"], 
+                            ["113681.32000000", "0.00005000"], 
+                            ["113682.30000000", "0.00005000"], 
+                            ["113683.82000000", "0.00005000"], 
+                            ["113684.00000000", "0.00080000"], 
+                            ["113685.38000000", "0.00200000"]
+                            ]
+                        }
+        
+
+    @pytest.mark.it('correctly updates order book content - message with asks only')
+    @pytest.mark.asyncio
+    async def test_updates_ob_asks_only(self, big_order_book, long_message):
+        message = long_message
+        message['b'] = [] 
+        await big_order_book.extract_order_book_bids_asks()
+        result = await big_order_book.update_order_book(message)
+        assert result == {"lastUpdateId": 74105025813, 
+                          "bids" : [
+                            ["113678.85000000", "7.25330000"], 
+                            ["113678.84000000", "0.77360000"], 
+                            ["113677.94000000", "0.00005000"], 
+                            ["113676.92000000", "0.00010000"], 
+                            ["113675.73000000", "0.00007000"], 
+                            ["113674.77000000", "0.07648000"], 
+                            ["113674.27000000", "0.00007000"]
+                            ],
+                        "asks" : 
+                            [ 
+                            ["113678.86000000", "1.93563000"],     
+                            ['113678.87000000', '0.00698000'], 
+                            ["113679.35000000", "0.03677000"], 
+                            ["113681.32000000", "0.00005000"], 
+                            ["113682.30000000", "0.00005000"], 
+                            ["113683.82000000", "0.00005000"], 
+                            ["113684.00000000", "0.00080000"], 
+                            ["113685.38000000", "0.00200000"],
+                            ['113689.58000000', '0.00023000'], 
+                            ['113689.59000000', '0.35536000'], 
+                            ['113689.88000000', '0.00005000'], 
+                            ['113689.89000000', '0.29047000'], 
+                            ['113690.71000000', '0.48505000']
+                            ]
+                        }
+        
+    @pytest.mark.it('correctly updates order book content - message with bids and asks')
+    @pytest.mark.asyncio
+    async def test_updates_ob_bids_and_asks(self, big_order_book, long_message):
+        await big_order_book.extract_order_book_bids_asks()
+        result = await big_order_book.update_order_book(long_message)
+        assert result == {"lastUpdateId": 74105025813, 
+                          "bids" : [
+                            ['113688.21000000' , '0.40000000'],
+                            ['113678.85000000' , '7.25330000'], 
+                            ['113678.84000000' , '0.77360000'], 
+                            ['113677.94000000' , '0.00005000'],
+                            ['113676.92000000' , '1.00000000'], 
+                            ['113675.73000000' , '0.00007000'],
+                            ['113674.27000000' , '0.00007000'],
+                            ['113670.84000000' , '0.10000000']
+                            ],
+                        "asks" : 
+                            [ 
+                            ["113678.86000000", "1.93563000"],     
+                            ['113678.87000000', '0.00698000'], 
+                            ["113679.35000000", "0.03677000"], 
+                            ["113681.32000000", "0.00005000"], 
+                            ["113682.30000000", "0.00005000"], 
+                            ["113683.82000000", "0.00005000"], 
+                            ["113684.00000000", "0.00080000"], 
+                            ["113685.38000000", "0.00200000"],
+                            ['113689.58000000', '0.00023000'], 
+                            ['113689.59000000', '0.35536000'], 
+                            ['113689.88000000', '0.00005000'], 
+                            ['113689.89000000', '0.29047000'], 
+                            ['113690.71000000', '0.48505000']
+                            ]
+                        }    
+
+class TestTrimOrderBook:
+    @pytest.mark.it('trims the order book to required num of records')
+    @pytest.mark.asyncio
+    async def test_trims_book(self, big_order_book, long_message):
+        await big_order_book.extract_order_book_bids_asks()
+        await big_order_book.update_order_book(long_message)   
+        result = await big_order_book.trim_order_book(3)
+        assert result == {"lastUpdateId": 74105025813, 
+                          "bids" : [
+                            ['113688.21000000' , '0.40000000'],
+                            ['113678.85000000' , '7.25330000'], 
+                            ['113678.84000000' , '0.77360000']
+                            ],
+                        "asks" : 
+                            [ 
+                            ["113678.86000000", "1.93563000"],     
+                            ['113678.87000000', '0.00698000'], 
+                            ["113679.35000000", "0.03677000"]
+                            ]
+                        }    
+
+                
