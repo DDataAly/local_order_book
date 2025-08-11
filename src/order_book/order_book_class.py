@@ -41,7 +41,6 @@ class OrderBook:
             'b' : self.ob_bids,
             'a' : self.ob_asks    
             }
-        print(dispatch_table)
         side = dispatch_table[book_side]
         try:    
             message_side = {float(price):float(qty) for [price,qty] in message.get(book_side,[])}
@@ -60,9 +59,27 @@ class OrderBook:
     
 
     async def update_order_book(self, message: dict) -> dict:
-        for book_side in ['a','b']:
-            await self.update_order_book_side (message, book_side)
+        dispatch_table =  {
+            'b' : self.ob_bids,
+            'a' : self.ob_asks    
+            }
+        for side in dispatch_table.keys():
+            side_records = await self.update_order_book_side (message, side)
+            dispatch_table[side] = [
+                [f'{price:.8f}', f'{qty:.8f}'] for price,qty in side_records.items()
+                                 ]
+        self.content ['bids'] = sorted(dispatch_table['b'], key = lambda x: float(x[0]), reverse=True)
+        self.content ['asks'] = sorted(dispatch_table['a'], key = lambda x: float(x[0]))
+        return self.content
+    
+    async def trim_order_book(self, num_records =5000):
+        # Binance order book snapshot contains 5000 records
+        # We need to trim the order book as we have reliable data only for 5000 records
+        self.content['bids'] = self.content['bids'][0:num_records]
+        self.content['asks'] = self.content['asks'][0:num_records]
+        return self.content
 
+    
 
 
 
