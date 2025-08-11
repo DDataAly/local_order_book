@@ -3,7 +3,7 @@ import pytest
 import logging
 from src.order_book.order_book_class import OrderBook, EmptyOrderBookException
 
-
+#region
 @pytest.fixture
 def small_order_book():
     content = {"lastUpdateId": 74105025813, 
@@ -11,7 +11,7 @@ def small_order_book():
                                 ["113678.84000000", "0.77360000"]
                             ], 
                         "asks": [["113678.86000000", "1.93563000"], 
-                                ["113679.35000000", "0.03677000"]
+                                ["113900.35000000", "0.13677000"]
                                 ]
                             }
     order_book = OrderBook(content)
@@ -47,8 +47,8 @@ def short_message():
             's': 'BTCUSDT', 
             'U': 74105025814, 
             'u': 74105025843, 
-            'b': [['114000.57000000', '0.30000000'], ['113688.21000000', '0.40000000']],
-            'a': [['113678.86000000', '1.93563000'], ['113690.71000000', '0.48505000']]
+            'b': [['114000.57000000', '0.30000000']],
+            'a': [['113666.20000000', '2.93563000']]
             }
 
 
@@ -79,6 +79,7 @@ def long_message():
                 ['113690.71000000', '0.48505000']
                  ]
             }
+#endregion
 
 #region
 @pytest.mark.describe('Order book tests')
@@ -88,6 +89,7 @@ class TestOrderBookInit:
         order_book = OrderBook()
         assert isinstance(order_book, OrderBook)
     
+
     @pytest.mark.it('should initialise with correct values')
     def test_initalise_values(self):
         order_book = OrderBook({"lastUpdateId": 74105025813, 
@@ -101,6 +103,7 @@ class TestOrderBookInit:
                                 "asks": [["113678.85000000", "7.25330000"],
                                         ["113685.38000000", "0.00200000"]]}
 
+
 class TestExtractOrderBookBidsAsks:
     @pytest.mark.it('should return a tuple with two dict when called')
     @pytest.mark.asyncio
@@ -110,190 +113,197 @@ class TestExtractOrderBookBidsAsks:
         assert isinstance(result, tuple)
         assert isinstance(result[0], dict)
         assert isinstance(result[1], dict)
-
-    @pytest.mark.it('correctly parses bid price and qty from the order book snapshot')
-    @pytest.mark.asyncio
-    async def test_parses_snapshot_bids(self, small_order_book):
-        message = {}
-        result = await small_order_book.extract_order_book_bids_asks()
-        assert result[0] == {113678.85000000 : 7.25330000, 113678.84000000: 0.77360000}
-
-    @pytest.mark.it('correctly parses ask price and qty from the order book snapshot')
-    @pytest.mark.asyncio
-    async def test_parses_snapshop_asks(self, small_order_book):
-        message = {}
-        result = await small_order_book.extract_order_book_bids_asks()
-        assert result[1] == {113678.86000000 : 1.93563000, 113679.35000000 : 0.03677000} 
-
-    @pytest.mark.it('raises and logs errors if order book doesn\'t contain "bids" or "asks"')
-    @pytest.mark.asyncio
-    async def test_raises_key_error(self, caplog):
-        order_book = OrderBook()
-        order_book.content = {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"]]
-                            }
-        caplog.set_level(logging.CRITICAL, logger="src.order_book.order_book_class")
-        with pytest.raises(KeyError) as e:
-            await order_book.extract_order_book_bids_asks()
-        assert e.value.args[0] == 'asks' 
-        assert 'Order book snapshot is not valid' in caplog.text 
-
-    @pytest.mark.it('raises and logs errors if prices in the order book are non-numerical')
-    @pytest.mark.asyncio
-    async def test_raises_value_error(self, caplog):
-        order_book = OrderBook()
-        order_book.content = {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"]],
-                        "asks":  [["some_text", "7.25330000"],
-                                ["113685.38000000", "0.00200000"]]
-                            }
-        caplog.set_level(logging.CRITICAL, logger="src.order_book.order_book_class")
-        with pytest.raises(ValueError) as e:
-            await order_book.extract_order_book_bids_asks()
-        assert "could not convert string to float" in str(e.value) 
-        assert 'Order book snapshot is not valid' in caplog.text
-
-
-    @pytest.mark.it('raises and logs errors if price-qty pairs are of non-list format')
-    @pytest.mark.asyncio
-    async def test_logs_errors_non_list_format(self, caplog):
-        order_book = OrderBook()
-        order_book.content = {"lastUpdateId": 74105025813, 
-                        "bids": [144, ["113678.85000000", "7.25330000"]],
-                        "asks":  [["113685.98000000", "7.25330000"],
-                                ["113685.38000000", "0.00200000"]]
-                            }
-        caplog.set_level(logging.CRITICAL, logger="src.order_book.order_book_class")
-        with pytest.raises(TypeError) as e:
-            await order_book.extract_order_book_bids_asks()
-        assert 'cannot unpack non-iterable' in str(e.value) 
-        assert 'Order book snapshot is not valid' in caplog.text                      
-
-
-    @pytest.mark.it('raises and logs an exception if order book snapshot has no bids or asks')
-    @pytest.mark.asyncio
-    async def test_raises_exception_empty_order_book(self,caplog):
-        order_book = OrderBook()
-        order_book.content = {"lastUpdateId": 74105025813, 
-                        "bids": [],
-                        "asks":  [["113685.38000000", "0.00200000"]]
-                            }
-        caplog.set_level(logging.CRITICAL, logger="src.order_book.order_book_class")
-        with pytest.raises(EmptyOrderBookException) as e:
-            await order_book.extract_order_book_bids_asks()
-        assert str(e.value) == "No bids or asks in the order book snapshot"
-        assert "Order book snapshot doesn\'t contain bids or asks" in caplog.text                    
     
+    @pytest.mark.it('correctly parses prices and qtys from the order book')
+    @pytest.mark.parametrize("index, expected_output",                            
+                            [
+                                (0, {113678.85000000 : 7.25330000, 113678.84000000: 0.77360000}),
+                                (1, {113678.86000000 : 1.93563000, 113900.35000000 : 0.13677000})  
+                            ],
+                            ids = ['parses bids',
+                                'parses asks']
+                        )           
+    @pytest.mark.asyncio
+    async def test_parses_snapshot_correctly(self,small_order_book, index, expected_output):
+            result = await small_order_book.extract_order_book_bids_asks()
+            assert result[index] == expected_output    
+
+
+    @pytest.mark.it('catches invalid order book: raises and logs errors')
+    @pytest.mark.parametrize("content, expected_error, expected_error_message, expected_log",                            
+                                [
+                                    (
+                                    {"lastUpdateId": 74105025813, 
+                                     "bids": [["113678.85000000", "7.25330000"], ["113678.84000000", "0.77360000"]]}, 
+                                    KeyError,
+                                    'asks', 
+                                    'Order book snapshot is not valid' 
+                                    ),
+                                                                        (
+                                    {"lastUpdateId": 74105025813, 
+                                     "asks": [["113685.38000000", "0.00200000"]]}, 
+                                    KeyError,
+                                    'bids', 
+                                    'Order book snapshot is not valid' 
+                                    ),
+                                     (
+                                    {"lastUpdateId": 74105025813, 
+                                    "bids": [],
+                                    "asks":  [["113685.38000000", "0.00200000"]]}, 
+                                    EmptyOrderBookException,
+                                    "No bids or asks in the order book snapshot",
+                                    "Order book snapshot doesn\'t contain bids or asks"
+                                    ),
+                                    (
+                                    {"lastUpdateId": 74105025813, 
+                                    "bids": [["113678.85000000", "7.25330000"]],
+                                    "asks":  []}, 
+                                    EmptyOrderBookException,
+                                    "No bids or asks in the order book snapshot",
+                                    "Order book snapshot doesn\'t contain bids or asks"
+                                    ),
+                                    (
+                                    {"lastUpdateId": 74105025813, 
+                                    "bids": [["113678.85000000", "7.25330000"], ["113678.84000000", "0.77360000"]],
+                                    "asks":  [["some_text", "7.25330000"],["113685.38000000", "0.00200000"]]},
+                                    ValueError,
+                                    "could not convert string to float",
+                                    'Order book snapshot is not valid'
+                                    ),
+                                    (
+                                    {"lastUpdateId": 74105025813, 
+                                    "bids": [["113678.85000000", "text"], ["113678.84000000", "0.77360000"]],
+                                    "asks":  [["113685.38000000", "0.00200000"]]},
+                                    ValueError,
+                                    "could not convert string to float",
+                                    'Order book snapshot is not valid'
+                                    ),
+                                    (
+                                    {"lastUpdateId": 74105025813, 
+                                    "bids": [144, ["113678.85000000", "7.25330000"]],
+                                    "asks":  [["113685.98000000", "7.25330000"],["113685.38000000", "0.00200000"]]},
+                                    TypeError,
+                                    'cannot unpack non-iterable',
+                                    'Order book snapshot is not valid'
+                                    )                                 
+                                ],
+                            ids = ['missing asks key',
+                                   'missing bids key',
+                                   'missing bids values',
+                                   'missing asks values',
+                                   'invalid price format',
+                                   'invalid qty format',
+                                   'invalid price-qty pair format'
+                                ]    
+                            )
+    @pytest.mark.asyncio
+    async def test_raises_error(self, content, expected_error, expected_error_message, expected_log, caplog):
+        order_book = OrderBook()
+        order_book.content = content
+        caplog.set_level(logging.CRITICAL, logger="src.order_book.order_book_class")
+        with pytest.raises (expected_error) as e:
+            await order_book.extract_order_book_bids_asks()
+        assert expected_error_message in str(e.value)  
+        assert expected_log in caplog.text 
 
 #endregion
 
-
+#Need to fix tests
 class TestUpdateOrderBookSide:
     @pytest.mark.it('should return a dict when called')
     @pytest.mark.asyncio
     async def test_returns_dict(self, small_order_book):
-        message = {}
         await small_order_book.extract_order_book_bids_asks()
-        result = await small_order_book.update_order_book_side(message, book_side ='b')
+        result = await small_order_book.update_order_book_side(message ={}, book_side ='b')
         assert isinstance(result, dict)
 
-    @pytest.mark.it('correctly parse bid price and qty from the WebSocket stream messages')
+
+    @pytest.mark.it('correctly parse bid price and qty from the WebSocket stream message')
+    @pytest.mark.parametrize('index, expected_output',
+                             [
+                                ('b', {113678.85000000 : 7.25330000, 113678.84000000 : 0.77360000, 114000.57000000 : 0.30000000}),
+                                ('a', {113678.86000000 : 1.93563000, 113900.35000000 : 0.13677000, 113666.20000000 : 2.93563000})
+                              ],
+                             ids = ['parses bids side', 'parses asks side'])
     @pytest.mark.asyncio
-    async def test_parses_message(self, short_message):
-        order_book = OrderBook({"lastUpdateId": 74105025813, 
-                        "bids": [['114000.57000000', '0.10000000']], 
-                        "asks": [ ['113678.86000000', '1.93563000']]})
-        await order_book.extract_order_book_bids_asks()
-        result = await order_book.update_order_book_side(short_message, book_side='b')
-        assert result == {114000.57000000: 0.30000000, 113688.21000000 : 0.40000000}
+    async def test_parses_message(self, small_order_book, short_message, index, expected_output):
+        await small_order_book.extract_order_book_bids_asks()
+        result = await small_order_book.update_order_book_side(short_message, book_side= index)
+        assert result == expected_output
 
 
-    @pytest.mark.it('logs errors if WebSocket stream message is of the wrong type or format')
-    @pytest.mark.asyncio
-    async def test_logs_errors(self, small_order_book, caplog):
-        message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [['some_text', '0.30000000']],
-            'a': []
-            }
+    @pytest.mark.it('catches invalid WebSocket stream messages: logs errors')
+    @pytest.mark.parametrize('index, side_value, expected_log',
+                             [
+                                 ('b',['some_text', '0.30000000'],'Bad message received'),
+                                 ('b',['113900.35000000', 'some_text'],'Bad message received'),
+                                 ('b', {113678.85000000 : 7.25330000}, 'Bad message received'),
+                                 ('a',['some_text', '0.80000000'],'Bad message received'),
+                                 ('a',['114952.35000000', 'some_text'],'Bad message received'),
+                                 ('a', {113678.86000000 : 1.93563000},'Bad message received')                    
+                             ],
+                             ids = ['invalid price format in bids',
+                                    'invalid qty format in bids',
+                                    'invalid price-qty pair format in bids',
+                                    'invalid price format in asks',
+                                    'invalid qty format in asks', 
+                                    'invalid price-qty pair format in asks']
+                            )        
+         
+    @pytest.mark.asyncio                        
+    async def test_logs_invalid_message_errors(self, small_order_book, short_message, index, side_value, expected_log, caplog):
+        short_message [index] = side_value
+        # We need to isolate the test case by making sure the other side doesn't cause the error
+        if index == 'a':
+            short_message['b'] = []
+        else: 
+            short_message['a'] = []
         caplog.set_level(logging.WARNING, logger="src.order_book.order_book_class")
         await small_order_book.extract_order_book_bids_asks()
-        await small_order_book.update_order_book_side(message, book_side ='b')
-        assert 'Bad message received, skipping' in caplog.text 
+        await small_order_book.update_order_book_side(short_message, book_side= index)
+        assert expected_log in caplog.text 
 
-    @pytest.mark.it('removes bids from the order book if qty for this bid in the WebSocket stream message is zero')
+
+    @pytest.mark.it('correctly processes individual updates')
+    # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
+    @pytest.mark.parametrize('index, side_value, expected_output',
+                             [
+                                ('b', [["113678.84000000", "0.00000000"]], {113678.85000000: 7.25330000}),
+                                ('b', [["113680.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
+                                 {113678.85000000: 7.25330000, 113678.84000000 : 0.77360000}),
+                                ('b', [["113678.85000000", "2.00000000"]], {113678.85000000: 2.00000000, 113678.84000000: 0.77360000}),
+                                ('b', [["113680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
+                                    {113678.85000000: 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    113680.84000000 : 4.00000000,
+                                    113300.84000000 : 0.50000000}),
+                                ('a', [["113678.86000000", "0.00000000"]], {113900.35000000 : 0.13677000}),
+                                ('a', [["113900.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
+                                 {113678.86000000 : 1.93563000, 113900.35000000 : 0.13677000}), 
+                                ('a', [["113678.86000000", "2.00000000"]], {113678.86000000: 2.00000000, 113900.35000000 : 0.13677000}),
+                                ('a', [["114680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    114680.84000000 : 4.00000000,
+                                    113300.84000000 : 0.50000000})  
+                             ],
+                             ids = [
+                             'removes bid from order book - qty for bid in the message is zero',
+                             'ignores bids with zero qty in the message if they\'re not in the order book',    
+                             'updates bid qty in the order book with its qty from the message',
+                             'adds new bids in the order book from the message',
+                             'removes ask from order book - qty for ask in the message is zero',
+                             'ignores asks with zero qty in the message if they\'re not in the order book',
+                             'updates ask qty in the order book with its qty from the message',
+                             'adds new asks in the order book from the message']   
+                            )
     @pytest.mark.asyncio
-    async def test_removes_zero_qty_bids(self, small_order_book):
-        message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [["113678.84000000", "0.00000000"]],
-            'a': []
-            }  
+    async def test_updates(self, short_message, small_order_book, index, side_value, expected_output):
+        short_message [index] = side_value
         await small_order_book.extract_order_book_bids_asks()
-        result = await small_order_book.update_order_book_side (message, book_side = 'b')
-        assert result == {113678.85000000: 7.25330000}
+        result = await small_order_book.update_order_book_side (short_message, book_side = index)
+        assert result == expected_output
 
-
-
-    @pytest.mark.it('ignores bids in the WebSocket stream message with zero qty if they\'re not in the order book')
-    @pytest.mark.asyncio
-    async def test_ignores_non_present_zero_qty_bids(self, small_order_book):
-        # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
-        message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [["113680.84000000", "0.00000000"],["113300.84000000", "0.00000000"]],
-            'a': []
-            }  
-        await small_order_book.extract_order_book_bids_asks()
-        result = await small_order_book.update_order_book_side (message, book_side = 'b')
-        assert result == {113678.85000000: 7.25330000, 113678.84000000 : 0.77360000} 
-
-
-    @pytest.mark.it('if bid is present in the order book and WebSocket stream message  the qty in the order book becomes equal to qty in the message')
-    @pytest.mark.asyncio
-    async def test_updates_bids_qty(self, small_order_book):
-        message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [["113678.85000000", "2.00000000"]],
-            'a': []
-            }  
-        await small_order_book.extract_order_book_bids_asks()
-        result = await small_order_book.update_order_book_side (message, book_side = 'b')
-        assert result == {113678.85000000: 2.00000000,
-                          113678.84000000: 0.77360000}   
-
-    @pytest.mark.it('adds bids in the WebSocket stream message with non-zero qty if they\'re not in the order book')
-    @pytest.mark.asyncio
-    async def test_adds_non_present_non_zero_qty_bids(self, small_order_book):
-        # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
-        message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [["113680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]],
-            'a': []
-            }  
-        await small_order_book.extract_order_book_bids_asks()
-        result = await small_order_book.update_order_book_side (message, book_side ='b')
-        assert result == {113678.85000000: 7.25330000, 
-                          113678.84000000 : 0.77360000,
-                          113680.84000000 : 4.00000000,
-                          113300.84000000 : 0.50000000} 
         
     @pytest.mark.it('processes messages with different types of updates correctly')
     @pytest.mark.asyncio
