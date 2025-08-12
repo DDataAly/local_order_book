@@ -134,6 +134,22 @@ class OrderBook:
                 print (f'Price {price} is outside the order book range or not present in the order book')
                 continue
         return(dispatch_table[side])
+    
+
+    async def update_order_book_prices(self, message:dict) -> dict:
+        dispatch_table =  {
+            'b' : self.ob_bids_prices,
+            'a' : self.ob_asks_prices    
+            }
+        for side in dispatch_table:
+            price_change = await self.get_prices_from_message(message, side[0])
+            side_records = await self.update_ob_prices (price_change, side[0])
+            dispatch_table[side] = [
+                f'{price:.8f}' for price in side_records
+                                 ]
+        return (self.ob_bids_prices, self.ob_asks_prices)
+
+
 
 # #for price in prices_to_remove:
 # #    print(price in order_book_prices)
@@ -141,25 +157,48 @@ class OrderBook:
      
         
 content = {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"],
-                                ["113678.83000000", "0.77360000"]
-                            ], 
-                        "asks": [["113678.86000000", "1.93563000"], 
-                                ["113900.35000000", "0.13677000"]
-                                ]
-                            }
+                    "bids": [["113678.85000000", "7.25330000"], 
+                            ["113678.84000000", "0.77360000"], 
+                            ["113677.94000000", "0.00005000"], 
+                            ["113676.92000000", "0.00010000"], 
+                            ["113675.73000000", "0.00007000"], 
+                            ["113674.77000000", "0.07648000"], 
+                            ["113674.27000000", "0.00007000"]
+                        ], 
+                    "asks": [["113678.86000000", "1.93563000"], 
+                            ["113679.35000000", "0.03677000"], 
+                            ["113681.32000000", "0.00005000"], 
+                            ["113682.30000000", "0.00005000"], 
+                            ["113683.82000000", "0.00005000"], 
+                            ["113684.00000000", "0.00080000"], 
+                            ["113685.38000000", "0.00200000"]
+                            ]
+                        }
 
 message = {'e': 'depthUpdate', 
             'E': 1754423900214, 
             's': 'BTCUSDT', 
             'U': 74105025814, 
             'u': 74105025843, 
-            'b': [ ["113678.84000000", "0.00000000"],
-                  ["113678.85000000", "0.0000000"],
-                ["113678.83500000", "0.00000000"]
-                  ],
-            'a': [['113666.20000000', '2.93563000']]
+            'b': 
+            [    
+                ['114000.57000000', '0.00000000'], # delete the item which is bigger than the biggest bid in the order book
+                ['113688.21000000', '0.40000000'],  # add bid better than the best bid in the order book
+                ['113676.92000000', '1.00000000'], # change qty for the item present in the order book
+                ['113674.77000000', '0.00000000'], # delete the item which is present in the local order book
+                ['113670.84000000', '0.10000000'], # add bid lower than the best bid int the order book
+                ['113000.00000000', '0.00000000'] # delete the item which is smaller than the smallest bid in the order book
+            ],
+            'a': 
+            [
+                ['113678.86000000', '1.93563000'], 
+                ['113678.87000000', '0.00698000'], 
+                ['113689.58000000', '0.00023000'], 
+                ['113689.59000000', '0.35536000'], 
+                ['113689.88000000', '0.00005000'], 
+                ['113689.89000000', '0.29047000'], 
+                ['113690.71000000', '0.48505000']
+                 ]
             }
 
 async def run_code():
@@ -168,119 +207,11 @@ async def run_code():
     print(f'Prices and qtys {result}')
     result_new = await order_book.extract_ob_prices()
     print(f'These are price lists: {result_new}')
-    price_change = await order_book.get_prices_from_message(message, 'b')
-    print (f'These is the prices to change {price_change}')
-    bids_with_added_prices = await order_book.update_ob_prices (price_change, 'b')
-    print (f'These are the bids with added prices {bids_with_added_prices}')
+
+    ob_bids_prices, ob_asks_prices = await order_book.update_order_book_prices (message)
+    print (f'These are the bids with all updates {ob_bids_prices}')
+    print (f'These are the asks with all updates {ob_asks_prices}')
 asyncio.run(run_code())
 
 
-
-# # Maintaining price list
-# # Bids only 
-# order_book_prices = [float(x[0]) for x in order_book['bids']]
-# order_book_prices.reverse()  # Everything to be done on the reversed order book to maintain asc order otherwise bisect works incorrectly
-# print (f'Reversed order book prices:{order_book_prices}')
-# print('\n')
-
-# prices_to_keep=[] # Includes both cases where qty changes and new price levels are added
-# prices_to_remove=[] # Includes records with zero qty
-# message_bids =[[float(x[0]), float(x[1])] for x in message['b']]
-# for message in message_bids:
-#     if message[1] == 0:
-#         prices_to_remove.append(message[0])
-#     else:
-#         prices_to_keep.append(message[0])
-# print(f'Prices to keep {prices_to_keep}')
-# print(f'Prices to remove {prices_to_remove}')
-
-
-# for price in prices_to_keep:
-#     index = bisect.bisect_left(order_book_prices, price)
-#     if order_book_prices[index ] == price:
-#         print(f'{price} already in the book')
-#         continue
-#     else:
-#         bisect.insort_left(order_book_prices, price)
-# print(order_book_prices)
-# print('\n')
-
-# # for price in prices_to_keep:
-# #     print(price in order_book_prices)
-
-
-# for price in prices_to_remove:
-#     #print(f'{price}')
-#     #print(price in order_book_prices)
-#     index = bisect.bisect_left(order_book_prices, price)
-#     #print(index)
-#     #print(len(order_book_prices))
-#     if index in range (1,len(order_book_prices)):
-#         order_book_prices.pop(index)
-#         print (f'Price {price} has been removed')
-#     else:
-#         print (f'Price {price} is outside the order book range')
-#         continue
-# print(order_book_prices)
-
-# #for price in prices_to_remove:
-# #    print(price in order_book_prices)
-
-
-
-     
-# # Maintainig order book
-# order_book_bids_dict = {float(price):float(qty) for [price,qty] in order_book['bids']}
-# print("Order book bids")
-# for price, qty in order_book_bids_dict.items():
-#     print(f'{price:.8f}, {qty:.8f}')
-
-# message_bids_dict = {float(price):float(qty) for [price,qty] in message['b']}
-# print('Message bids')
-# for price, qty in message_bids_dict.items():
-#     print(f'{price:.8f}, {qty:.8f}')
-
-# print('Updating in progress')
-# for price in message_bids_dict.keys():
-#     if message_bids_dict[price] == 0:
-#         print(f'Deleting {price} from order book if present')
-#         order_book_bids_dict.pop(price,None)
-#     else:
-#         order_book_bids_dict[price] = message_bids_dict[price]
-#         print(f'Updating/adding {price} in the order book')
-
-# print('Updated order book bids')
-# for price, qty in order_book_bids_dict.items():
-#     print(f'{price:.8f}, {qty:.8f}')
-
-# print('Updated order book bids = sorted')
-# order_book_sorted_bids = dict(sorted(order_book_bids_dict.items()))
-# for price, qty in order_book_sorted_bids.items():
-#     print(f'{price:.8f}, {qty:.8f}')
-
-
-# def return_order_book(self):
-# print('\n')
-# print('Local copy of the book in json format')
-# local_book = {"lastUpdateId": message['u'],
-#               "bids":[[f'{price:.8f}', f'{qty:.8f}'] for price,qty in sorted(order_book_sorted_bids.items(), reverse = True)]
-#             }
-# print(local_book)
-
-
-
-
-
-# ws_stream = "{\"e\":\"depthUpdate\",\"E\":1753887116314,\"s\":\"BTCUSDT\",\"U\":73718086122,\"u\":73718086156,\"b\":[[\"118467.65000000\",\"1.60662000\"],[\"118467.64000000\",\"0.00020000\"],[\"118459.20000000\",\"0.30390000\"],[\"118458.78000000\",\"0.00000000\"],[\"118457.78000000\",\"0.01693000\"],[\"118457.29000000\",\"0.00010000\"],[\"118429.19000000\",\"0.00000000\"],[\"118428.94000000\",\"0.04230000\"],[\"118186.88000000\",\"0.02538000\"],[\"106620.00000000\",\"0.00020000\"]],\"a\":[[\"118467.66000000\",\"4.62422000\"],[\"118470.00000000\",\"0.03682000\"],[\"118470.60000000\",\"0.00000000\"],[\"118472.24000000\",\"0.30404000\"],[\"118494.15000000\",\"0.00000000\"],[\"118499.01000000\",\"0.00000000\"]]}"
-
-# def get_order_book():
-#     snapshot = requests.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20').json()
-#     with open ((path_initial_shapshot), 'w') as file:
-#         json.dump(snapshot, file)
-#     print('Order book is saved')
-#     order_book_timestamp = snapshot.get("lastUpdateId")
-#     return order_book_timestamp
-
-     
-# get_order_book()      
 
