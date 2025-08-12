@@ -67,9 +67,11 @@ class OrderBook:
             dispatch_table[side] = [
                 [f'{price:.8f}', f'{qty:.8f}'] for price,qty in side_records.items()
                                  ]
-        # Need to separate sorting logic into separate func to avoid sorting every time after we add a message    
-        self.content ['bids'] = sorted(dispatch_table['b'], key = lambda x: float(x[0]), reverse=True)
-        self.content ['asks'] = sorted(dispatch_table['a'], key = lambda x: float(x[0]))
+        return self.ob_bids, self.ob_asks
+
+    async def sort_updated_order_book(self) -> dict:
+        self.content ['bids'] = sorted(self.ob_bids, key = lambda x: float(x[0]), reverse=True)
+        self.content ['asks'] = sorted(self.ob_asks, key = lambda x: float(x[0]))
         return self.content
     
     async def trim_order_book(self, num_records: int =5000) -> dict:
