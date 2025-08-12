@@ -107,7 +107,17 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
 
 
 
-async def find_matching_messsage(order_book_last_update_id,buffer, event, match):
+async def find_matching_messsage(order_book_last_update_id, buffer, event, match) -> None:
+    """
+    Does smth
+    Args:
+        need to update
+        order_book_last_update_id: an int, the value 
+        buffer: a deque to keep incoming WebSocket stream messages
+    Returns:
+        need to update
+        int - The 'U' value (first update ID) from the first valid depth update message.
+    """
     while not event.is_set():
         await asyncio.sleep (0.1)
         while buffer:
@@ -211,12 +221,21 @@ async def run_code():
 
 
 def get_order_book() -> int:
+    """
+    Sends a request to get a copy of the order book from Binance REST API.
+    Saves the received JSON locally at the path specified by 'path_initial_shapshot'.
+    Extracts and returns the 'lastUpdateId' of the saved order book copy.
+    This id is used to synchronise the order book with WebSocket depth stream.
+
+    Returns:
+        int - The last update ID from the order book copy 
+    """
     snapshot = requests.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20').json()
     with open ((path_initial_shapshot), 'w') as file:
         json.dump(snapshot, file)
     print('Order book is saved')
-    order_book_ts = snapshot.get("lastUpdateId")
-    return order_book_ts
+    order_book_last_id = snapshot.get("lastUpdateId")
+    return order_book_last_id
 
 asyncio.run(run_code()) #Creates the event loop and runs coroutines 
 
