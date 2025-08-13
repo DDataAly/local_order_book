@@ -1,6 +1,7 @@
 import pytest_asyncio
 import pytest
 import logging
+import copy
 from src.order_book.order_book_class import OrderBook, EmptyOrderBookException
 
 @pytest.fixture
@@ -315,122 +316,104 @@ class TestUpdateOrderBookSide:
                         113670.84000000 : 0.10000000}
         
 class TestUpdateOrderBook:
-    @pytest.mark.it('returns a dictionary with correct keys')
+    @pytest.mark.it('returns a tuple of dictionaries')
     @pytest.mark.asyncio
     async def test_returns_correct_dict(self, small_order_book, short_message):
         await small_order_book.extract_order_book_bids_asks()
         result = await small_order_book.update_order_book(short_message)
+        assert isinstance(result, tuple)
+        assert isinstance(result[0], dict)
+        assert isinstance(result[1], dict)
+        
+    @pytest.mark.it('updates both sides of the order book correctly for a message with bids only, asks only or both bids and asks')
+    @pytest.mark.parametrize('message, expected_output',
+                        [
+                            ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [['114000.57000000', '0.30000000']],'a': []},
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    114000.57000000 : 0.30000000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000}
+                                )
+                            ),    
+                            ({'e': 'depthUpdate','E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [],'a': [['113666.20000000', '2.93563000']]}, 
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    113666.20000000 : 2.93563000}
+                                )
+                            ),
+                            ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [['114000.57000000', '0.30000000']],'a': [['113666.20000000', '2.93563000']]},
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    114000.57000000 : 0.30000000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    113666.20000000 : 2.93563000}
+                                ) 
+                              )
+                        ],
+                        ids = ['bids only',
+                               'asks only',
+                               'bids and asks'])
+    @pytest.mark.asyncio
+    async def test_updates_both_sides_correctly(self, small_order_book, message, expected_output):
+        await small_order_book.extract_order_book_bids_asks()
+        result = await small_order_book.update_order_book(message)
+        assert result == expected_output
+  
+
+class TestSortUpdatedOrderBook:
+    @pytest.mark.it('returns a dictionary with correct keys')
+    @pytest.mark.asyncio
+    async def test_returns_correct_dict(self, small_order_book, short_message):
+        await small_order_book.extract_order_book_bids_asks()
+        await small_order_book.update_order_book(short_message)
+        result = await small_order_book.sort_updated_order_book()
         assert isinstance(result, dict)
-        assert {'lastUpdateId', 'bids','asks'}.issubset(set(result.keys()))
-        assert len(result) == 3 
+        assert len(result.keys()) == 3
+        assert set(['lastUpdateId','bids','asks']) == set(result.keys())
 
 
-    @pytest.mark.it('correctly updates order book content - message with bids only')
+    @pytest.mark.it('sorts bids in desc and asks in asc order')
     @pytest.mark.asyncio
-    async def test_updates_ob_bids_only(self, big_order_book, long_message):
-        message = long_message
-        message['a'] = [] 
+    async def test_returns_sorts_bids_asks(self, big_order_book, long_message):
         await big_order_book.extract_order_book_bids_asks()
-        result = await big_order_book.update_order_book(message)
-        assert result == {"lastUpdateId": 74105025813, 
-                          "bids" : [
-                            ['113688.21000000' , '0.40000000'],
-                            ['113678.85000000' , '7.25330000'], 
-                            ['113678.84000000' , '0.77360000'], 
-                            ['113677.94000000' , '0.00005000'],
-                            ['113676.92000000' , '1.00000000'], 
-                            ['113675.73000000' , '0.00007000'],
-                            ['113674.27000000' , '0.00007000'],
-                            ['113670.84000000' , '0.10000000']
-                            ],
-                        "asks" : 
-                            [
-                            ["113678.86000000", "1.93563000"], 
-                            ["113679.35000000", "0.03677000"], 
-                            ["113681.32000000", "0.00005000"], 
-                            ["113682.30000000", "0.00005000"], 
-                            ["113683.82000000", "0.00005000"], 
-                            ["113684.00000000", "0.00080000"], 
-                            ["113685.38000000", "0.00200000"]
-                            ]
-                        }
-        
+        await big_order_book.update_order_book(long_message)
+        result = await big_order_book.sort_updated_order_book()
+        assert all(result['bids'][i] > result['bids'][i + 1] for i in range(0, (len(result['bids'])) - 1))
+        assert all(result['asks'][i] < result['asks'][i + 1] for i in range(0, (len(result['asks'])) - 1))
+  
 
-    @pytest.mark.it('correctly updates order book content - message with asks only')
+    @pytest.mark.it('returns prices and qtys as lists containing strings of numbers with 8 digits after floating point')
     @pytest.mark.asyncio
-    async def test_updates_ob_asks_only(self, big_order_book, long_message):
-        message = long_message
-        message['b'] = [] 
-        await big_order_book.extract_order_book_bids_asks()
-        result = await big_order_book.update_order_book(message)
-        assert result == {"lastUpdateId": 74105025813, 
-                          "bids" : [
-                            ["113678.85000000", "7.25330000"], 
-                            ["113678.84000000", "0.77360000"], 
-                            ["113677.94000000", "0.00005000"], 
-                            ["113676.92000000", "0.00010000"], 
-                            ["113675.73000000", "0.00007000"], 
-                            ["113674.77000000", "0.07648000"], 
-                            ["113674.27000000", "0.00007000"]
-                            ],
-                        "asks" : 
-                            [ 
-                            ["113678.86000000", "1.93563000"],     
-                            ['113678.87000000', '0.00698000'], 
-                            ["113679.35000000", "0.03677000"], 
-                            ["113681.32000000", "0.00005000"], 
-                            ["113682.30000000", "0.00005000"], 
-                            ["113683.82000000", "0.00005000"], 
-                            ["113684.00000000", "0.00080000"], 
-                            ["113685.38000000", "0.00200000"],
-                            ['113689.58000000', '0.00023000'], 
-                            ['113689.59000000', '0.35536000'], 
-                            ['113689.88000000', '0.00005000'], 
-                            ['113689.89000000', '0.29047000'], 
-                            ['113690.71000000', '0.48505000']
-                            ]
-                        }
-        
-    @pytest.mark.it('correctly updates order book content - message with bids and asks')
-    @pytest.mark.asyncio
-    async def test_updates_ob_bids_and_asks(self, big_order_book, long_message):
-        await big_order_book.extract_order_book_bids_asks()
-        result = await big_order_book.update_order_book(long_message)
-        assert result == {"lastUpdateId": 74105025813, 
-                          "bids" : [
-                            ['113688.21000000' , '0.40000000'],
-                            ['113678.85000000' , '7.25330000'], 
-                            ['113678.84000000' , '0.77360000'], 
-                            ['113677.94000000' , '0.00005000'],
-                            ['113676.92000000' , '1.00000000'], 
-                            ['113675.73000000' , '0.00007000'],
-                            ['113674.27000000' , '0.00007000'],
-                            ['113670.84000000' , '0.10000000']
-                            ],
-                        "asks" : 
-                            [ 
-                            ["113678.86000000", "1.93563000"],     
-                            ['113678.87000000', '0.00698000'], 
-                            ["113679.35000000", "0.03677000"], 
-                            ["113681.32000000", "0.00005000"], 
-                            ["113682.30000000", "0.00005000"], 
-                            ["113683.82000000", "0.00005000"], 
-                            ["113684.00000000", "0.00080000"], 
-                            ["113685.38000000", "0.00200000"],
-                            ['113689.58000000', '0.00023000'], 
-                            ['113689.59000000', '0.35536000'], 
-                            ['113689.88000000', '0.00005000'], 
-                            ['113689.89000000', '0.29047000'], 
-                            ['113690.71000000', '0.48505000']
-                            ]
-                        }    
+    async def test_returns_qty_prices_correct_format(self, small_order_book, short_message):
+        await small_order_book.extract_order_book_bids_asks()
+        await small_order_book.update_order_book(short_message)
+        result = await small_order_book.sort_updated_order_book()
+        assert all(isinstance(result['bids'][i],list) for i in range(0,(len(result['bids'])-1)))
+        assert all(isinstance(result['bids'][i][0],str) for i in range(0,(len(result['bids'])-1)))
+        assert all(isinstance(result['bids'][i][1],str) for i in range(0,(len(result['bids'])-1)))
+        assert all(len(result['bids'][i][0].split('.')[1]) == 8 for i in range(0,(len(result['bids'])-1)))
+
 
 class TestTrimOrderBook:
     @pytest.mark.it('trims the order book to required num of records')
     @pytest.mark.asyncio
     async def test_trims_book(self, big_order_book, long_message):
         await big_order_book.extract_order_book_bids_asks()
-        await big_order_book.update_order_book(long_message)   
+        await big_order_book.update_order_book(long_message)  
+        await big_order_book.sort_updated_order_book()  
         result = await big_order_book.trim_order_book(3)
         assert result == {"lastUpdateId": 74105025813, 
                           "bids" : [
@@ -446,4 +429,20 @@ class TestTrimOrderBook:
                             ]
                         }    
 
-                
+class TestPriceListMaintenance:
+    @pytest.mark.it('price lists matches price-qty pairs in the order book after updates')
+    @pytest.mark.asyncio
+    async def test_matching_full_version(self, big_order_book, long_message):
+        big_order_book_1 = copy.deepcopy(big_order_book)
+        await big_order_book_1.extract_order_book_bids_asks()
+        await big_order_book_1.update_order_book(long_message)  
+        await big_order_book_1.sort_updated_order_book() 
+        order_book_1_bids = [bid[0] for bid in big_order_book_1.content['bids']]
+        order_book_1_asks = [ask[0] for ask in big_order_book_1.content['asks']]
+        price_lists_order_book =(order_book_1_bids, order_book_1_asks)
+        
+        await big_order_book.extract_order_book_prices()
+        price_lists = await big_order_book.update_price_lists(long_message) 
+    
+        assert price_lists_order_book == price_lists
+
