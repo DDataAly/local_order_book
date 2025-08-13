@@ -1,4 +1,3 @@
-import json
 import bisect
 import logging
 import asyncio
@@ -21,12 +20,12 @@ class OrderBook:
         self.ob_asks_prices = []
 
         
-    # Maintainig order book
+    # Maintaining order book
 
     async def extract_order_book_bids_asks (self) -> tuple[dict, dict]:
         try:
-            self.ob_bids = {float(price):float(qty) for [price,qty] in self.content['bids']}
-            self.ob_asks = {float(price):float(qty) for [price,qty] in self.content['asks']}
+            self.ob_bids = {float(price):float(qty) for price,qty in self.content['bids']}
+            self.ob_asks = {float(price):float(qty) for price,qty in self.content['asks']}
             if len(self.ob_bids) == 0 or len(self.ob_asks) == 0:
                 logger.critical ('Order book snapshot doesn\'t contain bids or asks and can\'t be processed')
                 # Need to raise error as the execution of the code can't be continued
@@ -39,13 +38,9 @@ class OrderBook:
     
 
     async def update_order_book_side(self, message: dict, book_side: str) -> dict:
-        dispatch_table =  {
-            'b' : self.ob_bids,
-            'a' : self.ob_asks    
-            }
-        side = dispatch_table[book_side]
+        side = self.ob_bids if book_side == 'b' else self.ob_asks
         try:    
-            message_side = {float(price):float(qty) for [price,qty] in message.get(book_side,[])}
+            message_side = {float(price):float(qty) for price,qty in message.get(book_side,[])}
             for price, qty in message_side.items():
                 if qty == 0:
                     side.pop(price,None)
@@ -57,22 +52,19 @@ class OrderBook:
         return side
     
 
-    async def update_order_book(self, message: dict) -> dict:
-        dispatch_table =  {
-            'b' : self.ob_bids,
-            'a' : self.ob_asks    
-            }
-        for side in dispatch_table:
-            side_records = await self.update_order_book_side (message, side[0])
-            dispatch_table[side] = [
-                [f'{price:.8f}', f'{qty:.8f}'] for price,qty in side_records.items()
-                                 ]
+    async def update_order_book(self, message: dict) -> tuple[dict, dict]:
+        for side_key in ['b', 'a']:
+            await self.update_order_book_side (message, side_key)
         return self.ob_bids, self.ob_asks
+    
 
     async def sort_updated_order_book(self) -> dict:
-        self.content ['bids'] = sorted(self.ob_bids, key = lambda x: float(x[0]), reverse=True)
-        self.content ['asks'] = sorted(self.ob_asks, key = lambda x: float(x[0]))
-        return self.content
+        ob_bids_list = sorted(self.ob_bids.items(),reverse=True)
+        ob_asks_list = sorted(self.ob_asks.items())
+        self.content ['bids'] = [[f'{bid[0]:.8f}', f'{bid[1]:.8f}'] for bid in ob_bids_list]
+        self.content ['asks'] = [[f'{ask[0]:.8f}', f'{ask[1]:.8f}'] for ask in ob_asks_list]
+        return self.content                 
+
     
     async def trim_order_book(self, num_records: int =5000) -> dict:
         # Binance order book snapshot contains 5000 records
@@ -81,20 +73,20 @@ class OrderBook:
         self.content['asks'] = self.content['asks'][0:num_records]
         return self.content
 
-
 # Maintaining price list - not strictly required for order book
 # Going to use at the later stages of the project    
 
-    async def extract_ob_prices (self) -> tuple[list,list]:
+    async def extract_order_book_prices (self) -> tuple[list,list]:
+        #Doing sorting just in case there is some error in the snapshot and sorting is wrong
+        #Since method used once, sorting should not create a massive overhead
         self.ob_bids, self.ob_asks = await self.extract_order_book_bids_asks()
-        self.ob_bids_prices = [price for price in self.ob_bids.keys()]
-        self.ob_bids_prices.reverse()
-        self.ob_asks_prices = [price for price in self.ob_asks.keys()]
-        return (self.ob_bids_prices, self.ob_asks_prices)
+        self.ob_bids_prices = sorted(self.ob_bids.keys())
+        self.ob_asks_prices = sorted(self.ob_asks.keys())
+        return self.ob_bids_prices, self.ob_asks_prices
     
     async def get_prices_from_message(self, message: dict, side: str) -> PriceChange:
-        prices_to_keep =[] # Includes both cases where qty changes and new price levels are added
-        prices_to_remove =[] # Includes records with zero qty
+        # Records with qty = 0 should be deleted if present; if qty!=0 records should be updated if present or added if not
+        prices_to_keep, prices_to_remove =[],[] 
         try:
             message_price_qty =[[float(price), float(qty)] for price,qty in message[side]]
             for price,qty in message_price_qty:
@@ -107,112 +99,71 @@ class OrderBook:
         return PriceChange(prices_to_add_or_update = prices_to_keep, 
                             prices_to_remove = prices_to_remove)
     
-    async def update_ob_prices (self, PriceChange: namedtuple, side:str) -> list:
-        dispatch_table =  {
-            'b' : self.ob_bids_prices,
-            'a' : self.ob_asks_prices    
-            }
+
+    async def update_price_list_side (self, price_change: PriceChange, side_key:str) -> list:
+        price_list = self.ob_bids_prices if side_key == 'b' else self.ob_asks_prices 
+       
+        for price in price_change.prices_to_add_or_update:
+            index = bisect.bisect_left(price_list, price)
+            if index == len(price_list) or price_list[index] != price:
+                bisect.insort_left(price_list, price)
         
-        for price in PriceChange.prices_to_add_or_update:
-            index = bisect.bisect_left(dispatch_table[side], price)
-            if index < len(dispatch_table[side]) and dispatch_table[side][index] == price:
-                print(f'{price} already in the book')
-                continue
-            else:
-                bisect.insort_left(dispatch_table[side], price)
-        print(f'This is the list the adder/updater finishes with {dispatch_table[side]}')
-
-    
-        for price in PriceChange.prices_to_remove:
-            print(f'This is the list the remover starts with {dispatch_table[side]}')
-            print(f'This is what we\'re going to remove: {PriceChange.prices_to_remove}')
-            print('\n')
-            index = bisect.bisect_left(dispatch_table[side], price)
-            print(index)
-            if index < len(dispatch_table[side]) and price == dispatch_table[side][index]:
-                dispatch_table[side].pop(index)
-                print (f'Price {price} has been removed')
-            else:
-                print (f'Price {price} is outside the order book range or not present in the order book')
-                continue
-        return(dispatch_table[side])
+        for price in price_change.prices_to_remove:
+            index = bisect.bisect_left(price_list, price)
+            if index < len(price_list) and price == price_list[index]:
+                price_list.pop(index)       
+        return price_list
     
 
-    async def update_order_book_prices(self, message:dict) -> dict:
-        dispatch_table =  {
-            'b' : self.ob_bids_prices,
-            'a' : self.ob_asks_prices    
-            }
-        for side in dispatch_table:
-            price_change = await self.get_prices_from_message(message, side[0])
-            side_records = await self.update_ob_prices (price_change, side[0])
-            dispatch_table[side] = [
-                f'{price:.8f}' for price in side_records
-                                 ]
-        return (self.ob_bids_prices, self.ob_asks_prices)
-
-
-
-# #for price in prices_to_remove:
-# #    print(price in order_book_prices)
+    async def update_price_lists(self, message:dict) -> tuple[list, list]:
+        dispatch_table = {'b':[], 'a':[]}
+        for side_key in dispatch_table.keys():
+            price_change = await self.get_prices_from_message(message, side_key)
+            dispatch_table[side_key] = await self.update_price_list_side (price_change, side_key)
+        self.ob_bids_prices = [f'{price:.8f}' for price in dispatch_table['b']]
+        self.ob_bids_prices.reverse()
+        self.ob_asks_prices = [f'{price:.8f}' for price in dispatch_table['a']]
+        return self.ob_bids_prices, self.ob_asks_prices
     
-     
-        
+    async def trim_price_lists(self, num_records: int = 5000) -> tuple[list, list]:
+        self.ob_bids_prices = self.ob_bids_prices[0:num_records]
+        self.ob_asks_prices = self.ob_asks_prices[0:num_records]
+        return self.ob_bids_prices, self.ob_asks_prices
+
+
+
+
+
+
+#endregion
 content = {"lastUpdateId": 74105025813, 
-                    "bids": [["113678.85000000", "7.25330000"], 
-                            ["113678.84000000", "0.77360000"], 
-                            ["113677.94000000", "0.00005000"], 
-                            ["113676.92000000", "0.00010000"], 
-                            ["113675.73000000", "0.00007000"], 
-                            ["113674.77000000", "0.07648000"], 
-                            ["113674.27000000", "0.00007000"]
-                        ], 
-                    "asks": [["113678.86000000", "1.93563000"], 
-                            ["113679.35000000", "0.03677000"], 
-                            ["113681.32000000", "0.00005000"], 
-                            ["113682.30000000", "0.00005000"], 
-                            ["113683.82000000", "0.00005000"], 
-                            ["113684.00000000", "0.00080000"], 
-                            ["113685.38000000", "0.00200000"]
-                            ]
-                        }
-
+                        "bids": [["113678.85000000", "7.25330000"], 
+                                ["113678.84000000", "0.77360000"]
+                            ], 
+                        "asks": [["113678.86000000", "1.93563000"], 
+                                ["113900.35000000", "0.13677000"]
+                                ]
+                            }
 message = {'e': 'depthUpdate', 
             'E': 1754423900214, 
             's': 'BTCUSDT', 
             'U': 74105025814, 
             'u': 74105025843, 
-            'b': 
-            [    
-                ['114000.57000000', '0.00000000'], # delete the item which is bigger than the biggest bid in the order book
-                ['113688.21000000', '0.40000000'],  # add bid better than the best bid in the order book
-                ['113676.92000000', '1.00000000'], # change qty for the item present in the order book
-                ['113674.77000000', '0.00000000'], # delete the item which is present in the local order book
-                ['113670.84000000', '0.10000000'], # add bid lower than the best bid int the order book
-                ['113000.00000000', '0.00000000'] # delete the item which is smaller than the smallest bid in the order book
-            ],
-            'a': 
-            [
-                ['113678.86000000', '1.93563000'], 
-                ['113678.87000000', '0.00698000'], 
-                ['113689.58000000', '0.00023000'], 
-                ['113689.59000000', '0.35536000'], 
-                ['113689.88000000', '0.00005000'], 
-                ['113689.89000000', '0.29047000'], 
-                ['113690.71000000', '0.48505000']
-                 ]
+            'b': [['114000.57000000', '0.30000000']],
+            'a': [['113666.20000000', '2.93563000']]
             }
+
 
 async def run_code():
     order_book = OrderBook(content)
     result = await order_book.extract_order_book_bids_asks()
-    print(f'Prices and qtys {result}')
-    result_new = await order_book.extract_ob_prices()
-    print(f'These are price lists: {result_new}')
-
-    ob_bids_prices, ob_asks_prices = await order_book.update_order_book_prices (message)
-    print (f'These are the bids with all updates {ob_bids_prices}')
-    print (f'These are the asks with all updates {ob_asks_prices}')
+    print(f'This is what self.ob_bids and self.ob_asks look like {result}')
+    result_new = await order_book.extract_order_book_prices()
+    print(f'This is the tuple with two lists of sorted prices: {result_new}')
+    result_content = await order_book.update_price_lists(message)
+    print(f'This is the updated and sorted lists {result_content}')
+    result_trimmed = await order_book.trim_price_lists(2)
+    print(f'This is a tuple with trimmed price lists {result_trimmed}')
 asyncio.run(run_code())
 
 
