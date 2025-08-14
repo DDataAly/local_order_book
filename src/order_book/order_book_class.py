@@ -1,6 +1,5 @@
 import bisect
 import logging
-import asyncio
 from collections import namedtuple
 
 logger = logging.getLogger(__name__)
@@ -8,21 +7,19 @@ logger = logging.getLogger(__name__)
 PriceChange = namedtuple('PriceChange', ['prices_to_add_or_update', 'prices_to_remove'])
 
 class EmptyOrderBookException(Exception):
-    """Raised when the order book snapshot has no asks or bids values"""
-    
+    """Raised when the order book snapshot has no asks or bids values"""   
 
 class OrderBook:
     def __init__(self, content:dict = None):
         self.content = content
-        self.ob_bids = {}
-        self.ob_asks = {}
-        self.ob_bids_prices = []
-        self.ob_asks_prices = []
-
+        self.ob_bids: dict[float, float] = {} 
+        self.ob_asks: dict[float, float] = {} 
+        self.ob_bids_prices: list[float] = [] # always sorted ASC
+        self.ob_asks_prices: list[float] = [] # always sorted ASC
         
     # Maintaining order book
 
-    async def extract_order_book_bids_asks (self) -> tuple[dict, dict]:
+    async def extract_order_book_bids_asks (self) -> tuple[list[float], list[float]]:
         try:
             self.ob_bids = {float(price):float(qty) for price,qty in self.content['bids']}
             self.ob_asks = {float(price):float(qty) for price,qty in self.content['asks']}
@@ -72,11 +69,13 @@ class OrderBook:
         self.content['bids'] = self.content['bids'][0:num_records]
         self.content['asks'] = self.content['asks'][0:num_records]
         return self.content
+    
 
-# Maintaining price list - not strictly required for order book
-# Going to use at the later stages of the project    
+    # Maintaining price list - not strictly required for order book
+    # Going to use at the later stages of the project    
 
-    async def extract_order_book_prices (self) -> tuple[list,list]:
+
+    async def extract_order_book_prices (self) -> tuple[list[float],list[float]]:
         #Doing sorting just in case there is some error in the snapshot and sorting is wrong
         #Since method used once, sorting should not create a massive overhead
         self.ob_bids, self.ob_asks = await self.extract_order_book_bids_asks()
@@ -84,7 +83,8 @@ class OrderBook:
         self.ob_asks_prices = sorted(self.ob_asks.keys())
         return self.ob_bids_prices, self.ob_asks_prices
     
-    async def get_prices_from_message(self, message: dict, side: str) -> PriceChange:
+
+    async def parse_price_changes_from_message(self, message: dict, side: str) -> PriceChange:
         # Records with qty = 0 should be deleted if present; if qty!=0 records should be updated if present or added if not
         prices_to_keep, prices_to_remove =[],[] 
         try:
@@ -115,56 +115,23 @@ class OrderBook:
         return price_list
     
 
-    async def update_price_lists(self, message:dict) -> tuple[list, list]:
-        dispatch_table = {'b':[], 'a':[]}
-        for side_key in dispatch_table.keys():
-            price_change = await self.get_prices_from_message(message, side_key)
-            dispatch_table[side_key] = await self.update_price_list_side (price_change, side_key)
-        self.ob_bids_prices = [f'{price:.8f}' for price in dispatch_table['b']]
-        self.ob_bids_prices.reverse()
-        self.ob_asks_prices = [f'{price:.8f}' for price in dispatch_table['a']]
+    async def update_price_lists(self, message:dict) -> tuple[list[float],list[float]]:
+        for side_key in ('b','a'):
+            price_change = await self.parse_price_changes_from_message(message, side_key)
+            await self.update_price_list_side (price_change, side_key)
         return self.ob_bids_prices, self.ob_asks_prices
-    
-    async def trim_price_lists(self, num_records: int = 5000) -> tuple[list, list]:
-        self.ob_bids_prices = self.ob_bids_prices[0:num_records]
+
+
+    async def trim_price_lists(self, num_records: int = 5000) -> tuple[list[float],list[float]]:
+        self.ob_bids_prices = self.ob_bids_prices[-num_records:]
         self.ob_asks_prices = self.ob_asks_prices[0:num_records]
         return self.ob_bids_prices, self.ob_asks_prices
 
 
-
-
-
-
-#endregion
-content = {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"]
-                            ], 
-                        "asks": [["113678.86000000", "1.93563000"], 
-                                ["113900.35000000", "0.13677000"]
-                                ]
-                            }
-message = {'e': 'depthUpdate', 
-            'E': 1754423900214, 
-            's': 'BTCUSDT', 
-            'U': 74105025814, 
-            'u': 74105025843, 
-            'b': [['114000.57000000', '0.30000000']],
-            'a': [['113666.20000000', '2.93563000']]
-            }
-
-
-async def run_code():
-    order_book = OrderBook(content)
-    result = await order_book.extract_order_book_bids_asks()
-    print(f'This is what self.ob_bids and self.ob_asks look like {result}')
-    result_new = await order_book.extract_order_book_prices()
-    print(f'This is the tuple with two lists of sorted prices: {result_new}')
-    result_content = await order_book.update_price_lists(message)
-    print(f'This is the updated and sorted lists {result_content}')
-    result_trimmed = await order_book.trim_price_lists(2)
-    print(f'This is a tuple with trimmed price lists {result_trimmed}')
-asyncio.run(run_code())
-
+    async def format_price_lists (self) -> tuple[list[str],list[str]]:   
+        bids_prices = [f'{price:.8f}' for price in reversed(self.ob_bids_prices)]
+        asks_prices = [f'{price:.8f}' for price in self.ob_asks_prices]
+        return bids_prices, asks_prices
+    
 
 
