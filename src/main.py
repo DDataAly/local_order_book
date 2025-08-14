@@ -107,17 +107,24 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
 
 
 
-async def find_matching_messsage(order_book_last_update_id, buffer, event, match) -> None:
+async def find_matching_messsage(order_book_last_update_id, buffer, event, match_content) -> None:
     """
-    Does smth
+    Continuously checks the buffer for the earliest depth update message with the 'u' value 
+    (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
+    Once found, saves this message in a match_content variable and sets the Asyncio event
+    to signal the event loop that it can proceed with other coroutines.
+
+
     Args:
-        need to update
-        order_book_last_update_id: an int, the value 
-        buffer: a deque to keep incoming WebSocket stream messages
+        order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
+        buffer (collections.deque[str]): incoming WebSocket stream messages waiting to be processed
+        event (asyncio.Event): an event object set when the match is found
+        match_content (dict): a dict with the message containing the match
+
     Returns:
-        need to update
-        int - The 'U' value (first update ID) from the first valid depth update message.
+        None, the function exists once the match is found and the event was set
     """
+
     while not event.is_set():
         await asyncio.sleep (0.1)
         while buffer:
@@ -135,9 +142,9 @@ async def find_matching_messsage(order_book_last_update_id, buffer, event, match
 
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
-                match['content'] = parsed
+                match_content = parsed
                 event.set()
-                print(f'Match is found: {match}')
+                print(f'Match is found: {match_content}')
                 return   # Not returning anything, using an event as a flag to confirm the match
             else:
                 buffer.popleft()
@@ -180,11 +187,7 @@ async def run_code():
             find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, match_event, match_content))
             await match_event.wait()
 
-            if match_event.is_set():
-                ws_processing_task = asyncio.create_task(ws_processing(buffer))
-            else:
-                print('No match found, nothing to process yet')        
-
+            ws_processing_task = asyncio.create_task(ws_processing(buffer))  
 
             # Run coroutines for 5 sec - prevents an infinite loop by raising a TimeOut Error
             try: 
