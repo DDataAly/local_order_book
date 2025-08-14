@@ -1,4 +1,3 @@
-import pytest_asyncio
 import pytest
 import logging
 import copy
@@ -51,7 +50,6 @@ def short_message():
             'a': [['113666.20000000', '2.93563000']]
             }
 
-
 @pytest.fixture
 def long_message():
     return {'e': 'depthUpdate', 
@@ -80,8 +78,10 @@ def long_message():
                  ]
             }
 
+
 @pytest.mark.describe('Order book tests')
 class TestOrderBookInit:
+   
     @pytest.mark.it('should intitialise an order book object')
     def test_initialise_object(self):
         order_book = OrderBook()
@@ -100,9 +100,10 @@ class TestOrderBookInit:
                                         ["113674.27000000", "0.00007000"]],
                                 "asks": [["113678.85000000", "7.25330000"],
                                         ["113685.38000000", "0.00200000"]]}
-
+        
 
 class TestExtractOrderBookBidsAsks:
+    
     @pytest.mark.it('should return a tuple with two dict when called')
     @pytest.mark.asyncio
     async def test_returns_dict(self, small_order_book):
@@ -112,6 +113,7 @@ class TestExtractOrderBookBidsAsks:
         assert isinstance(result[0], dict)
         assert isinstance(result[1], dict)
     
+
     @pytest.mark.it('correctly parses prices and qtys from the order book')
     @pytest.mark.parametrize("index, expected_output",                            
                             [
@@ -206,6 +208,7 @@ class TestExtractOrderBookBidsAsks:
 
 
 class TestUpdateOrderBookSide:
+
     @pytest.mark.it('should return a dict when called')
     @pytest.mark.asyncio
     async def test_returns_dict(self, small_order_book):
@@ -316,6 +319,7 @@ class TestUpdateOrderBookSide:
                         113670.84000000 : 0.10000000}
         
 class TestUpdateOrderBook:
+
     @pytest.mark.it('returns a tuple of dictionaries')
     @pytest.mark.asyncio
     async def test_returns_correct_dict(self, small_order_book, short_message):
@@ -325,6 +329,7 @@ class TestUpdateOrderBook:
         assert isinstance(result[0], dict)
         assert isinstance(result[1], dict)
         
+
     @pytest.mark.it('updates both sides of the order book correctly for a message with bids only, asks only or both bids and asks')
     @pytest.mark.parametrize('message, expected_output',
                         [
@@ -408,6 +413,7 @@ class TestSortUpdatedOrderBook:
 
 
 class TestTrimOrderBook:
+
     @pytest.mark.it('trims the order book to required num of records')
     @pytest.mark.asyncio
     async def test_trims_book(self, big_order_book, long_message):
@@ -430,9 +436,10 @@ class TestTrimOrderBook:
                         }    
 
 class TestPriceListMaintenance:
-    @pytest.mark.it('price lists matches price-qty pairs in the order book after updates')
+
+    @pytest.mark.it('price lists matches price-qty pairs in the order book after a single update')
     @pytest.mark.asyncio
-    async def test_matching_full_version(self, big_order_book, long_message):
+    async def test_matching_full_version_single_update(self, big_order_book, long_message):
         big_order_book_1 = copy.deepcopy(big_order_book)
         await big_order_book_1.extract_order_book_bids_asks()
         await big_order_book_1.update_order_book(long_message)  
@@ -442,7 +449,34 @@ class TestPriceListMaintenance:
         price_lists_order_book =(order_book_1_bids, order_book_1_asks)
         
         await big_order_book.extract_order_book_prices()
-        price_lists = await big_order_book.update_price_lists(long_message) 
+        await big_order_book.update_price_lists(long_message) 
+        price_lists = await big_order_book.format_price_lists()
     
         assert price_lists_order_book == price_lists
+
+
+    @pytest.mark.it('price lists matches price-qty pairs in the order book after multiple updates')
+    @pytest.mark.parametrize("trim", [False, True])
+    @pytest.mark.asyncio
+    async def test_matching_full_version_multiple_updates(self, big_order_book, long_message, short_message, trim, num_records = 3):
+        big_order_book_1 = copy.deepcopy(big_order_book)
+        await big_order_book_1.extract_order_book_bids_asks()
+        await big_order_book_1.update_order_book(long_message) 
+        await big_order_book_1.update_order_book(short_message) 
+        await big_order_book_1.sort_updated_order_book() 
+        if trim:
+            await big_order_book_1.trim_order_book(num_records)
+        order_book_1_bids = [bid[0] for bid in big_order_book_1.content['bids']]
+        order_book_1_asks = [ask[0] for ask in big_order_book_1.content['asks']]
+        price_lists_order_book =(order_book_1_bids, order_book_1_asks)
+        
+        await big_order_book.extract_order_book_prices()
+        await big_order_book.update_price_lists(long_message) 
+        await big_order_book.update_price_lists(short_message) 
+        if trim:
+            await big_order_book.trim_price_lists(num_records)                
+        price_lists = await big_order_book.format_price_lists()
+
+        assert price_lists_order_book == price_lists
+
 
