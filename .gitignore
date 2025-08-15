@@ -1,2 +1,4 @@
 .json
 venv/
+**/.pycache
+**/__pycache__

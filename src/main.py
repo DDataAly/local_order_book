@@ -1,14 +1,13 @@
 import asyncio
 import websockets
 import json
-import requests
-from utils.helpers import path_initial_shapshot, path_match_ws
+import aiohttp
+from utils.helpers import path_initial_shapshot
 from collections import deque
-
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
 
-
+#region
 async def send_subscription_request(websocket) -> str:
     """
     Sends a subscription request to the Binance WebSocket for depth updates.
@@ -69,10 +68,10 @@ async def is_subscription_confirmed(response) -> bool:
 
 async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
     """
-    Indefinite function which receives order book prices and quantity updates and adds them to buffer
+    Infinite function which receives order book prices and quantity updates and adds them to buffer
     Args:
         websocket: The WebSocket connection to Binance
-        buffer: deque to keep incoming steam messages
+        buffer: a deque to keep incoming WebSocket stream messages
     Returns:
         Nothing 
     """
@@ -81,7 +80,16 @@ async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deq
         response = await websocket.recv() 
         buffer.append(response)
 
-async def get_first_message_id(buffer):
+async def get_first_depth_update_id(buffer: deque[str]) -> int:
+    """
+    Loops through messages in the buffer till finds a valid depth update message.
+    Extracts the ID of the first update in the first valid depth update message,
+    which is used to synchronise the WebSocket stream with the API order book snapshot.
+    Args:
+        buffer: a deque to keep incoming WebSocket stream messages
+    Returns:
+        int - The 'U' value (first update ID) from the first valid depth update message.
+    """
     while not buffer:
         await asyncio.sleep(0.01)
     for message in buffer:    
@@ -96,9 +104,70 @@ async def get_first_message_id(buffer):
             print(f'Skipping non-depthUpdate message: {parsed}')
         await asyncio.sleep(0.01)
 
+#endregion
+
+async def get_order_book() -> int:
+    """
+    NEED TO UPDATE
+    Sends a request to get a copy of the order book from Binance REST API.
+    Saves the received JSON locally at the path specified by 'path_initial_shapshot'.
+    Extracts and returns the 'lastUpdateId' of the saved order book copy.
+    This id is used to synchronise the order book with WebSocket depth stream.
+
+    Returns:
+        int - The last update ID from the order book copy 
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
+            snapshot = await response.json()
+    with open ((path_initial_shapshot), 'w') as file:
+        json.dump(snapshot, file)
+    print('Order book is saved')
+    order_book_last_id = snapshot.get("lastUpdateId")
+    return order_book_last_id
 
 
-async def find_matching_messsage(order_book_last_update_id,buffer, event, match):
+async def fetch_order_book_snapshot(buffer, event) -> None:
+    """
+    Does smth - #TODO
+
+    Args:
+        event (asyncio.Event): an event object set when the match is found
+
+    Returns:
+        None, the function exists once the match is found and the event was set
+    """
+
+    while not event.is_set():
+        await asyncio.sleep (0.1)
+        order_book_last_update_id = await get_order_book()  
+        first_received_message_id = await get_first_depth_update_id(buffer)
+
+        if order_book_last_update_id >= first_received_message_id:
+            event.set()
+            print(f'A valid snapshot of the order book is found')
+            return    
+
+
+
+
+async def find_matching_messsage(order_book_last_update_id, buffer, event) -> None:
+    """
+    Continuously checks the buffer for the earliest depth update message with the 'u' value 
+    (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
+    Once found, saves this message in a match_content variable and sets the Asyncio event
+    to signal the event loop that it can proceed with other coroutines.
+
+
+    Args:
+        order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
+        buffer (collections.deque[str]): incoming WebSocket stream messages waiting to be processed
+        event (asyncio.Event): an event object set when the match is found
+
+    Returns:
+        None, the function exists once the match is found and the event was set
+    """
+
     while not event.is_set():
         await asyncio.sleep (0.1)
         while buffer:
@@ -116,9 +185,9 @@ async def find_matching_messsage(order_book_last_update_id,buffer, event, match)
 
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
-                match['content'] = parsed
+                match_content = parsed
                 event.set()
-                print(f'Match is found: {match}')
+                print(f'Match is found: {match_content}')
                 return   # Not returning anything, using an event as a flag to confirm the match
             else:
                 buffer.popleft()
@@ -147,25 +216,20 @@ async def run_code():
 
             
             ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
-            order_book_last_update_id = get_order_book()  
-            first_received_message_id = await get_first_message_id(buffer)
+            order_book_last_update_id = await get_order_book()  
+            first_received_message_id = await get_first_depth_update_id(buffer)
             ws_processing_task = None
         
 
             while order_book_last_update_id < first_received_message_id:
-                order_book_last_update_id = get_order_book() 
+                order_book_last_update_id = await get_order_book() 
 
             match_event = asyncio.Event()
-            match_content = {}    
             
-            find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, match_event, match_content))
+            find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, match_event))
             await match_event.wait()
 
-            if match_event.is_set():
-                ws_processing_task = asyncio.create_task(ws_processing(buffer))
-            else:
-                print('No match found, nothing to process yet')        
-
+            ws_processing_task = asyncio.create_task(ws_processing(buffer))  
 
             # Run coroutines for 5 sec - prevents an infinite loop by raising a TimeOut Error
             try: 
@@ -201,13 +265,6 @@ async def run_code():
 
 
 
-def get_order_book() -> int:
-    snapshot = requests.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20').json()
-    with open ((path_initial_shapshot), 'w') as file:
-        json.dump(snapshot, file)
-    print('Order book is saved')
-    order_book_ts = snapshot.get("lastUpdateId")
-    return order_book_ts
 
 asyncio.run(run_code()) #Creates the event loop and runs coroutines 
 
