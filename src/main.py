@@ -66,6 +66,16 @@ async def is_subscription_confirmed(response) -> bool:
         return True
     return False
 
+
+async def run_the_subscriber(websocket):
+    response = await send_subscription_request(websocket)
+    while not await is_subscription_confirmed(response):
+        await asyncio.sleep(0.1)
+        response = await send_subscription_request(websocket)
+    print ('Subscription is confirmed')  
+    return 
+
+
 async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
     """
     Infinite function which receives order book prices and quantity updates and adds them to buffer
@@ -128,16 +138,6 @@ async def get_order_book() -> int:
 
 
 async def fetch_order_book_snapshot(buffer, event) -> None:
-    """
-    Does smth - #TODO
-
-    Args:
-        event (asyncio.Event): an event object set when the match is found
-
-    Returns:
-        None, the function exists once the match is found and the event was set
-    """
-
     while not event.is_set():
         await asyncio.sleep (0.1)
         order_book_last_update_id = await get_order_book()  
@@ -146,9 +146,7 @@ async def fetch_order_book_snapshot(buffer, event) -> None:
         if order_book_last_update_id >= first_received_message_id:
             event.set()
             print(f'A valid snapshot of the order book is found')
-            return    
-
-
+            return order_book_last_update_id  
 
 
 async def find_matching_messsage(order_book_last_update_id, buffer, event) -> None:
@@ -203,19 +201,86 @@ async def ws_processing(buffer):
     await to_do_processing_logic()
 
 
+async def orchestrator(websocket):
+    buffer = deque([])
+
+    ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
+
+    snapshot_is_found = asyncio.Event()
+    fetch_order_book_task = asyncio.create_task(fetch_order_book_snapshot(buffer, snapshot_is_found))
+    order_book_last_update_id = fetch_order_book_task.result()
+    wait_for_suitable_order_book_task = asyncio.create_task(await snapshot_is_found.wait())
+
+    matching_message_is_found = asyncio.Event()
+    find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, matching_message_is_found))
+    wait_for_suitable_message_task = asyncio.create_task(await matching_message_is_found.wait())
+
+    ws_processing_task = asyncio.create_task(ws_processing(buffer))
+
+    # Run coroutines for 10 sec - prevents an infinite loop by raising a TimeOut Error
+    try: 
+        tasks =[ws_ingestion_task]
+        if fetch_order_book_task:
+            tasks.append (fetch_order_book_task)
+        if wait_for_suitable_order_book_task:
+            tasks.append (wait_for_suitable_order_book_task)
+        if find_match_task:
+            tasks.append (find_match_task)
+        if wait_for_suitable_message_task:
+            tasks.append(wait_for_suitable_message_task)
+        if ws_processing_task:
+            tasks.append(ws_processing_task)            
+
+        await asyncio.wait_for(
+            asyncio.gather(*tasks), 
+            timeout = 10
+        )
+                
+    except asyncio.TimeoutError:
+            print('Runtime time out')
+
+    # Need to re-write the tasks cancellation
+    await asyncio.sleep(2)
+    ws_ingestion_task.cancel()
+    find_match_task.cancel()
+    if ws_processing_task:
+        ws_processing_task.cancel()
+
+    #Wait for tasks completion - in this case TimeOut error
+    await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
+    
+    print('All done')
+
+
 async def run_code():
     try:
         async with websockets.connect(uri) as websocket:
             print("Connected to server")
-            #Run outside the queue to guarantee the ordering
+
+            try:
+                await asyncio.wait_for(run_the_subscriber(websocket), timeout = 5)
+            except asyncio.TimeoutError:
+                print('Can\'t subscribe to the requested channel')
+                return
+
+
+            #Run outside the orchestrator to guarantee we connect to WebSockets before we do anything else
+            # We need to set up a time limit so this doesn't run indefinitely if there is an issue with subscribing
             response = await send_subscription_request(websocket)
-            if await is_subscription_confirmed(response):
-                print ('Subscription is confirmed')
+            while not await is_subscription_confirmed(response):
+                response = await send_subscription_request(websocket)
+            print ('Subscription is confirmed')   
+
+            #Here we will have an orchestrator 
             
             buffer = deque([])
-
-            
+    
             ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
+
+            snapshot_is_found = asyncio.Event()
+            fetch_order_book_task = asyncio.create_task(fetch_order_book_snapshot(buffer, snapshot_is_found))
+
+
             order_book_last_update_id = await get_order_book()  
             first_received_message_id = await get_first_depth_update_id(buffer)
             ws_processing_task = None
