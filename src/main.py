@@ -137,36 +137,32 @@ async def get_order_book() -> int:
     return order_book_last_id
 
 
-async def fetch_order_book_snapshot(buffer, event) -> None:
-    while not event.is_set():
+async def fetch_order_book_snapshot(buffer) -> None:
+    while True:
         await asyncio.sleep (0.1)
         order_book_last_update_id = await get_order_book()  
         first_received_message_id = await get_first_depth_update_id(buffer)
 
         if order_book_last_update_id >= first_received_message_id:
-            event.set()
             print(f'A valid snapshot of the order book is found')
             return order_book_last_update_id  
 
 
-async def find_matching_messsage(order_book_last_update_id, buffer, event) -> None:
+async def find_matching_messsage(order_book_last_update_id, buffer) -> None:
     """
     Continuously checks the buffer for the earliest depth update message with the 'u' value 
     (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
-    Once found, saves this message in a match_content variable and sets the Asyncio event
-    to signal the event loop that it can proceed with other coroutines.
-
+    Once found, returns this message.
 
     Args:
         order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
         buffer (collections.deque[str]): incoming WebSocket stream messages waiting to be processed
-        event (asyncio.Event): an event object set when the match is found
 
     Returns:
-        None, the function exists once the match is found and the event was set
+        dict - the first matching message found in the buffer
     """
 
-    while not event.is_set():
+    while True:
         await asyncio.sleep (0.1)
         while buffer:
             message = buffer[0]
@@ -183,10 +179,8 @@ async def find_matching_messsage(order_book_last_update_id, buffer, event) -> No
 
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
-                match_content = parsed
-                event.set()
-                print(f'Match is found: {match_content}')
-                return   # Not returning anything, using an event as a flag to confirm the match
+                print(f'Match is found: {parsed}')
+                return parsed
             else:
                 buffer.popleft()
         print('No matching message found in the buffer yet.')
@@ -203,53 +197,24 @@ async def ws_processing(buffer):
 
 async def orchestrator(websocket):
     buffer = deque([])
-
     ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
 
-    snapshot_is_found = asyncio.Event()
-    fetch_order_book_task = asyncio.create_task(fetch_order_book_snapshot(buffer, snapshot_is_found))
-    order_book_last_update_id = fetch_order_book_task.result()
-    wait_for_suitable_order_book_task = asyncio.create_task(await snapshot_is_found.wait())
+    try:
+        order_book_last_update_id = await asyncio.wait_for(fetch_order_book_snapshot(buffer), timeout=5)
+        #print('No suitable order book fetched, can\'t proceed')   
 
-    matching_message_is_found = asyncio.Event()
-    find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, matching_message_is_found))
-    wait_for_suitable_message_task = asyncio.create_task(await matching_message_is_found.wait())
+        matching_message = await asyncio.wait_for(find_matching_messsage(order_book_last_update_id, buffer), timeout = 5)  
+        #print('No matching message found, can\'t proceed')    
+        print('Order book snapshot is fetched. Matching message is found. Starting processing')    
 
-    ws_processing_task = asyncio.create_task(ws_processing(buffer))
-
-    # Run coroutines for 10 sec - prevents an infinite loop by raising a TimeOut Error
-    try: 
-        tasks =[ws_ingestion_task]
-        if fetch_order_book_task:
-            tasks.append (fetch_order_book_task)
-        if wait_for_suitable_order_book_task:
-            tasks.append (wait_for_suitable_order_book_task)
-        if find_match_task:
-            tasks.append (find_match_task)
-        if wait_for_suitable_message_task:
-            tasks.append(wait_for_suitable_message_task)
-        if ws_processing_task:
-            tasks.append(ws_processing_task)            
-
-        await asyncio.wait_for(
-            asyncio.gather(*tasks), 
-            timeout = 10
-        )
-                
     except asyncio.TimeoutError:
-            print('Runtime time out')
-
-    # Need to re-write the tasks cancellation
-    await asyncio.sleep(2)
-    ws_ingestion_task.cancel()
-    find_match_task.cancel()
-    if ws_processing_task:
-        ws_processing_task.cancel()
-
-    #Wait for tasks completion - in this case TimeOut error
-    await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
+        print('No suitable order book fetched, can\'t proceed') #Need to correct this    
+        raise
     
-    print('All done')
+    ws_processing_task = asyncio.create_task(ws_processing(buffer))
+    return ws_ingestion_task, ws_processing_task
+    
+
 
 
 async def run_code():
@@ -262,6 +227,11 @@ async def run_code():
             except asyncio.TimeoutError:
                 print('Can\'t subscribe to the requested channel')
                 return
+            
+            ws_ingestion_task, ws_processing_task = await orchestrator(websocket)
+
+
+
 
 
             #Run outside the orchestrator to guarantee we connect to WebSockets before we do anything else
@@ -377,5 +347,58 @@ asyncio.run(run_code()) #Creates the event loop and runs coroutines
 #             return await is_ws_in_order_book(response, queue, replace_order_book = False, order_book_ts=order_book_ts)     
 #     return is_aligned
 
+# Event coordination
+# async def fetch_order_book_snapshot(buffer, event) -> None:
+#     while not event.is_set():
+#         await asyncio.sleep (0.1)
+#         order_book_last_update_id = await get_order_book()  
+#         first_received_message_id = await get_first_depth_update_id(buffer)
 
+#         if order_book_last_update_id >= first_received_message_id:
+#             event.set()
+#             print(f'A valid snapshot of the order book is found')
+#             return order_book_last_update_id  
+
+# Event coordination
+# async def find_matching_messsage(order_book_last_update_id, buffer, event) -> None:
+#     """
+#     Continuously checks the buffer for the earliest depth update message with the 'u' value 
+#     (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
+#     Once found, saves this message in a match_content variable and sets the Asyncio event
+#     to signal the event loop that it can proceed with other coroutines.
+
+
+#     Args:
+#         order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
+#         buffer (collections.deque[str]): incoming WebSocket stream messages waiting to be processed
+#         event (asyncio.Event): an event object set when the match is found
+
+#     Returns:
+#         None, the function exists once the match is found and the event was set
+#     """
+
+#     while not event.is_set():
+#         await asyncio.sleep (0.1)
+#         while buffer:
+#             message = buffer[0]
+           
+#             try:
+#                 parsed = json.loads(message)
+#             except json.JSONDecodeError:
+#                 buffer.popleft()
+#                 continue
+           
+#             if 'u' not in parsed:
+#                 buffer.popleft()
+#                 continue
+
+#             message_final_update_id = parsed ['u']
+#             if message_final_update_id > order_book_last_update_id:
+#                 match_content = parsed
+#                 event.set()
+#                 print(f'Match is found: {match_content}')
+#                 return   # Not returning anything, using an event as a flag to confirm the match
+#             else:
+#                 buffer.popleft()
+#         print('No matching message found in the buffer yet.')
  
