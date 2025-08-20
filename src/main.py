@@ -12,7 +12,7 @@ async def send_subscription_request(websocket) -> str:
     """
     Sends a subscription request to the Binance WebSocket for depth updates.
     Args:
-        websocket: The WebSocket connection to Binance.
+        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance.
     Returns:
         A JSON-formatted response string from Binance, which is either:
         - subscription confirmation {"result": null, "id": 1}
@@ -68,22 +68,29 @@ async def is_subscription_confirmed(response) -> bool:
 
 
 async def run_the_subscriber(websocket):
+    """
+    Repeatedly sends a subscription request to the Binance WebSocket for depth updates 
+    until the subscription is confirmed.
+    Args:
+        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance.
+    Returns:
+        None   
+    """
     response = await send_subscription_request(websocket)
     while not await is_subscription_confirmed(response):
         await asyncio.sleep(0.1)
         response = await send_subscription_request(websocket)
     print ('Subscription is confirmed')  
-    return 
 
 
 async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
     """
     Infinite function which receives order book prices and quantity updates and adds them to buffer
     Args:
-        websocket: The WebSocket connection to Binance
+        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance
         buffer: a deque to keep incoming WebSocket stream messages
     Returns:
-        Nothing 
+        None 
     """
     while True:
         print ('Continue ingestion')
@@ -118,11 +125,11 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
 
 async def get_order_book() -> int:
     """
-    NEED TO UPDATE
-    Sends a request to get a copy of the order book from Binance REST API.
+    Sends a request to get a copy of the order book from Binance REST API using aiohttp.ClientSession()
+    to avoid blocking the event loop. This allows ws_ingestion to run simultaneously with this function.
     Saves the received JSON locally at the path specified by 'path_initial_shapshot'.
     Extracts and returns the 'lastUpdateId' of the saved order book copy.
-    This id is used to synchronise the order book with WebSocket depth stream.
+    This ID is used to synchronize the order book with the WebSocket depth stream.
 
     Returns:
         int - The last update ID from the order book copy 
