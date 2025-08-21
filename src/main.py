@@ -215,7 +215,7 @@ async def orchestrator(websocket):
         print('Order book snapshot is fetched. Matching message is found. Starting processing')    
 
     except asyncio.TimeoutError:
-        print('No suitable order book fetched, can\'t proceed') #Need to correct this    
+        print('No suitable order book or message fetched, can\'t proceed') #Need to correct this    
         raise
     
     ws_processing_task = asyncio.create_task(ws_processing(buffer))
@@ -236,6 +236,29 @@ async def run_code():
                 return
             
             ws_ingestion_task, ws_processing_task = await orchestrator(websocket)
+                        
+            try: 
+                tasks =[ws_ingestion_task, ws_processing_task]
+                await asyncio.wait_for(asyncio.gather(tasks), timeout = 10)
+
+            except asyncio.TimeoutError:
+                 print('Run time has ended')
+            
+            await asyncio.sleep(2)
+            ws_ingestion_task.cancel()
+            ws_processing_task.cancel()
+
+            #Wait for tasks completion - in this case TimeOut error
+            await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
+            
+            print('All done')
+
+    except Exception as e:
+        print(f"Something went wrong: {e}")
+    finally:
+        print("WebSocket connection closed")
+        
+     
 
 
 
