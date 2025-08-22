@@ -96,6 +96,7 @@ async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deq
     while True:
         print ('Continue ingestion')
         response = await websocket.recv() 
+        print(response)
         buffer.append(response)
 
 async def get_first_depth_update_id(buffer: deque[str]) -> int:
@@ -190,17 +191,32 @@ async def find_matching_messsage(order_book_last_update_id, buffer) -> None:
                 buffer.popleft()
         print('No matching message found in the buffer yet.')
 
-        
-async def to_do_processing_logic():
-    await asyncio.sleep (0.1)
+async def create_and_save_local_order_book(snapshot, order_book_last_update_id):
+    order_book = OrderBook(snapshot) 
+    order_book.ob_bids, order_book.ob_asks = await order_book.extract_order_book_bids_asks()
+    order_book.ob_bids_prices, order_book.ob_asks_prices =  await order_book.extract_order_book_prices()
+    print(f'Order book object has been initialised with order book with the last update ID {order_book_last_update_id}')   
+    
+    with open ((path_initial_shapshot), 'w') as file:
+        json.dump(snapshot, file)
+    print('Order book copy is saved locally')
+
+    return order_book
+
+  
+async def to_do_processing_logic(order_book, message):
+    for message in buffer:
+        order_book.ob_bids, order_book.ob_asks = await order_book.update_order_book(message)
+        order_book.ob_bids_prices, order_book.ob_asks_prices = await order_book.update_price_lists(message)      
+        await asyncio.sleep (0.1)
 
 
-async def ws_processing(buffer):
-    # TODO
+async def ws_processing(order_book, buffer):
     # Infinite processing function
-    while True:
+    while buffer:
         print ('Continue processing')
         await to_do_processing_logic()
+        buffer.popleft()
     
 
 
@@ -229,13 +245,15 @@ async def orchestrator(websocket):
         print('No suitable Websocket stream message fetched, can\'t proceed')
         ws_ingestion.cancel()
         await asyncio.gather(ws_ingestion_task, return_exceptions=True)
-        raise   
+        raise 
 
-    order_book = OrderBook(snapshot) 
-    print(f'Order book object has been initialised with order book with the last update ID {order_book_last_update_id}')   
-    with open ((path_initial_shapshot), 'w') as file:
-        json.dump(snapshot, file)
-    print('Order book copy is saved locally')
+    order_book = await create_and_save_local_order_book(snapshot, order_book_last_update_id)
+
+    # order_book = OrderBook(snapshot) 
+    # print(f'Order book object has been initialised with order book with the last update ID {order_book_last_update_id}')   
+    # with open ((path_initial_shapshot), 'w') as file:
+    #     json.dump(snapshot, file)
+    # print('Order book copy is saved locally')
 
     ws_processing_task = asyncio.create_task(ws_processing(buffer))
     return ws_ingestion_task, ws_processing_task, order_book
@@ -258,7 +276,7 @@ async def run_code():
                         
             try: 
                 tasks =[ws_ingestion_task, ws_processing_task]
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout = 3)
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout = 1)
 
             except asyncio.TimeoutError:
                 print('Run time has ended')
