@@ -2,8 +2,9 @@ import asyncio
 import websockets
 import json
 import aiohttp
-from utils.helpers import path_initial_shapshot
 from collections import deque
+from order_book.order_book_class import OrderBook, EmptyOrderBookException
+from utils.helpers import path_initial_shapshot
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
 
@@ -137,22 +138,19 @@ async def get_order_book() -> int:
     async with aiohttp.ClientSession() as session:
         async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
             snapshot = await response.json()
-    with open ((path_initial_shapshot), 'w') as file:
-        json.dump(snapshot, file)
-    print('Order book is saved')
-    order_book_last_id = snapshot.get("lastUpdateId")
-    return order_book_last_id
+    order_book_last_update_id = snapshot.get("lastUpdateId")
+    return snapshot, order_book_last_update_id
 
 
 async def fetch_order_book_snapshot(buffer) -> None:
     while True:
         await asyncio.sleep (0.1)
-        order_book_last_update_id = await get_order_book()  
+        snapshot, order_book_last_update_id = await get_order_book()  
         first_received_message_id = await get_first_depth_update_id(buffer)
 
         if order_book_last_update_id >= first_received_message_id:
             print(f'A valid snapshot of the order book is found')
-            return order_book_last_update_id  
+            return snapshot, order_book_last_update_id  
 
 
 async def find_matching_messsage(order_book_last_update_id, buffer) -> None:
@@ -194,32 +192,53 @@ async def find_matching_messsage(order_book_last_update_id, buffer) -> None:
 
         
 async def to_do_processing_logic():
-    pass
+    await asyncio.sleep (0.1)
 
 
 async def ws_processing(buffer):
+    # TODO
     # Infinite processing function
-    await to_do_processing_logic()
+    while True:
+        print ('Continue processing')
+        await to_do_processing_logic()
+    
 
 
 async def orchestrator(websocket):
     buffer = deque([])
+    ws_ingestion_task = None
+    ws_processing_task = None
+    order_book = None
+
     ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
 
     try:
-        order_book_last_update_id = await asyncio.wait_for(fetch_order_book_snapshot(buffer), timeout=5)
-        #print('No suitable order book fetched, can\'t proceed')   
-
-        matching_message = await asyncio.wait_for(find_matching_messsage(order_book_last_update_id, buffer), timeout = 5)  
-        #print('No matching message found, can\'t proceed')    
-        print('Order book snapshot is fetched. Matching message is found. Starting processing')    
+        snapshot, order_book_last_update_id = await asyncio.wait_for(fetch_order_book_snapshot(buffer), timeout=5)
+        print('Suitable order book fetched, saving it now....')
 
     except asyncio.TimeoutError:
-        print('No suitable order book or message fetched, can\'t proceed') #Need to correct this    
-        raise
-    
+        print('No suitable order book fetched, can\'t proceed')
+        ws_ingestion.cancel()
+        await asyncio.gather(ws_ingestion_task, return_exceptions=True)
+        raise  
+
+    try:
+        matching_message = await asyncio.wait_for(find_matching_messsage(order_book_last_update_id, buffer), timeout = 5)  
+        print(f'Order book snapshot is fetched. Matching message is found {matching_message}. Starting processing') 
+    except asyncio.TimeoutError:
+        print('No suitable Websocket stream message fetched, can\'t proceed')
+        ws_ingestion.cancel()
+        await asyncio.gather(ws_ingestion_task, return_exceptions=True)
+        raise   
+
+    order_book = OrderBook(snapshot) 
+    print(f'Order book object has been initialised with order book with the last update ID {order_book_last_update_id}')   
+    with open ((path_initial_shapshot), 'w') as file:
+        json.dump(snapshot, file)
+    print('Order book copy is saved locally')
+
     ws_processing_task = asyncio.create_task(ws_processing(buffer))
-    return ws_ingestion_task, ws_processing_task
+    return ws_ingestion_task, ws_processing_task, order_book
     
 
 
@@ -235,21 +254,18 @@ async def run_code():
                 print('Can\'t subscribe to the requested channel')
                 return
             
-            ws_ingestion_task, ws_processing_task = await orchestrator(websocket)
+            ws_ingestion_task, ws_processing_task, order_book = await orchestrator(websocket)
                         
             try: 
                 tasks =[ws_ingestion_task, ws_processing_task]
-                await asyncio.wait_for(asyncio.gather(tasks), timeout = 10)
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout = 3)
 
             except asyncio.TimeoutError:
-                 print('Run time has ended')
-            
-            await asyncio.sleep(2)
-            ws_ingestion_task.cancel()
-            ws_processing_task.cancel()
-
-            #Wait for tasks completion - in this case TimeOut error
-            await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
+                print('Run time has ended')
+                for task in tasks:
+                    task.cancel()
+                #Wait for tasks completion - in this case TimeOut error
+                await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
             
             print('All done')
 
@@ -258,80 +274,11 @@ async def run_code():
     finally:
         print("WebSocket connection closed")
         
-     
+asyncio.run(run_code()) #Creates the event loop and runs coroutines  
 
 
 
 
-
-            #Run outside the orchestrator to guarantee we connect to WebSockets before we do anything else
-            # We need to set up a time limit so this doesn't run indefinitely if there is an issue with subscribing
-            response = await send_subscription_request(websocket)
-            while not await is_subscription_confirmed(response):
-                response = await send_subscription_request(websocket)
-            print ('Subscription is confirmed')   
-
-            #Here we will have an orchestrator 
-            
-            buffer = deque([])
-    
-            ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
-
-            snapshot_is_found = asyncio.Event()
-            fetch_order_book_task = asyncio.create_task(fetch_order_book_snapshot(buffer, snapshot_is_found))
-
-
-            order_book_last_update_id = await get_order_book()  
-            first_received_message_id = await get_first_depth_update_id(buffer)
-            ws_processing_task = None
-        
-
-            while order_book_last_update_id < first_received_message_id:
-                order_book_last_update_id = await get_order_book() 
-
-            match_event = asyncio.Event()
-            
-            find_match_task = asyncio.create_task(find_matching_messsage(order_book_last_update_id,buffer, match_event))
-            await match_event.wait()
-
-            ws_processing_task = asyncio.create_task(ws_processing(buffer))  
-
-            # Run coroutines for 5 sec - prevents an infinite loop by raising a TimeOut Error
-            try: 
-                tasks =[ws_ingestion_task]
-                if ws_processing_task:
-                    tasks.append (ws_processing_task)
-                if find_match_task:
-                    tasks.append (find_match_task)
-                await asyncio.wait_for(
-                    asyncio.gather(*tasks), 
-                    timeout = 10
-                )
-                       
-            except asyncio.TimeoutError:
-                 print('Runtime time out')
-
-            # Cancel infinite coroutines as wait_for does't cancel them
-            await asyncio.sleep(2)
-            ws_ingestion_task.cancel()
-            find_match_task.cancel()
-            if ws_processing_task:
-                ws_processing_task.cancel()
-
-            #Wait for tasks completion - in this case TimeOut error
-            await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
-            
-            print('All done')
-
-    except Exception as e:
-        print(f"Something went wrong: {e}")
-    finally:
-        print("WebSocket connection closed")
-
-
-
-
-asyncio.run(run_code()) #Creates the event loop and runs coroutines 
 
 
 
