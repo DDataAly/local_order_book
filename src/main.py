@@ -1,198 +1,12 @@
 import asyncio
 import websockets
 import json
-import aiohttp
 from collections import deque
 from order_book.order_book_class import OrderBook
 from utils.helpers import path_initial_shapshot
-
-class MissingMessageInIngestedStream(Exception):
-    """Raised when there is a gap between the update IDs in the stream of ingested depth updates"""   
+from wb_sockets import run_the_subscriber, ws_ingestion, fetch_order_book_snapshot, find_matching_message, ws_processing
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
-
-#region
-async def send_subscription_request(websocket) -> str:
-    """
-    Sends a subscription request to the Binance WebSocket for depth updates.
-    Args:
-        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance.
-    Returns:
-        A JSON-formatted response string from Binance, which is either:
-        - subscription confirmation {"result": null, "id": 1}
-        - depth update message 
-            {
-            "e": "depthUpdate", // Event type
-            "E": 1672515782136, // Event time
-            "s": "BNBBTC",      // Symbol
-            "U": 157,           // First update ID in event
-            "u": 160,           // Final update ID in event
-            "b": [              // Bids to be updated
-                [
-                "0.0024",       // Price level to be updated
-                "10"            // Quantity
-                ]
-            ],
-            "a": [              // Asks to be updated
-                [
-                "0.0026",       // Price level to be updated
-                "100"           // Quantity
-                ]
-            ]
-            }
-    """
-    await websocket.send(
-        json.dumps({
-            "method": "SUBSCRIBE",
-            "params": ["btcusdt@depth@100ms"], 
-            "id": 1}))
-    response = await websocket.recv()
-    return (response)
-
-
-async def is_subscription_confirmed(response) -> bool:
-    """
-    Parses the response string and checks that expected dictionary keys are present 
-    Args:
-        response: string returned by send_subscription_request(websocket)
-    Returns:
-        bool - True if keys are present otherwise False   
-    """
-    try:
-        response_dict = json.loads(response)
-    except json.JSONDecodeError as e:
-        print (f'Invalid format of server response: {e}') 
-        return False  
-         
-    if response_dict.keys() == {'result','id'}:
-        return True
-    elif response_dict.get('e') == "depthUpdate":
-        return True
-    return False
-
-
-async def run_the_subscriber(websocket):
-    """
-    Repeatedly sends a subscription request to the Binance WebSocket for depth updates 
-    until the subscription is confirmed.
-    Args:
-        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance.
-    Returns:
-        None   
-    """
-    response = await send_subscription_request(websocket)
-    while not await is_subscription_confirmed(response):
-        await asyncio.sleep(0.1)
-        response = await send_subscription_request(websocket)
-    print ('Subscription is confirmed')  
-
-
-async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
-    """
-    Infinite function which receives order book prices and quantity updates and adds them to buffer
-    Args:
-        websocket (websockets.WebSocketClientProtocol): The WebSocket connection to Binance
-        buffer: a deque to keep incoming WebSocket stream messages
-    Returns:
-        None 
-    """
-    while True:
-        print ('Continue ingestion')
-        response = await websocket.recv() 
-        print(response)
-        buffer.append(response)
-
-async def get_first_depth_update_id(buffer: deque[str]) -> int:
-    """
-    Loops through messages in the buffer till finds a valid depth update message.
-    Extracts the ID of the first update in the first valid depth update message,
-    which is used to synchronise the WebSocket stream with the API order book snapshot.
-    Args:
-        buffer: a deque to keep incoming WebSocket stream messages
-    Returns:
-        int - The 'U' value (first update ID) from the first valid depth update message.
-    """
-    while not buffer:
-        await asyncio.sleep(0.01)
-    for message in buffer:    
-        try:
-            parsed = json.loads(message)
-        except json.JSONDecodeError:
-            continue    
-        if 'U' in parsed:
-            print(f'First depth update message in the stream is {parsed}')
-            return parsed["U"]
-        else:
-            print(f'Skipping non-depthUpdate message: {parsed}')
-        await asyncio.sleep(0.01)
-
-#endregion
-
-async def get_order_book() -> int:
-    """
-    Sends a request to get a copy of the order book from Binance REST API using aiohttp.ClientSession()
-    to avoid blocking the event loop. This allows ws_ingestion to run simultaneously with this function.
-    Saves the received JSON locally at the path specified by 'path_initial_shapshot'.
-    Extracts and returns the 'lastUpdateId' of the saved order book copy.
-    This ID is used to synchronize the order book with the WebSocket depth stream.
-
-    Returns:
-        int - The last update ID from the order book copy 
-    """
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
-            snapshot = await response.json()
-    order_book_last_update_id = snapshot.get("lastUpdateId")
-    return snapshot, order_book_last_update_id
-
-
-async def fetch_order_book_snapshot(buffer) -> None:
-    while True:
-        await asyncio.sleep (0.1)
-        snapshot, order_book_last_update_id = await get_order_book()  
-        first_received_message_id = await get_first_depth_update_id(buffer)
-
-        if order_book_last_update_id >= first_received_message_id:
-            print(f'A valid snapshot of the order book is found')
-            return snapshot, order_book_last_update_id  
-
-
-async def find_matching_messsage(order_book_last_update_id, buffer) -> None:
-    """
-    Continuously checks the buffer for the earliest depth update message with the 'u' value 
-    (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
-    Once found, returns this message.
-
-    Args:
-        order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
-        buffer (collections.deque[str]): incoming WebSocket stream messages waiting to be processed
-
-    Returns:
-        dict - the first matching message found in the buffer
-    """
-
-    while True:
-        await asyncio.sleep (0.1)
-        while buffer:
-            message = buffer[0]
-           
-            try:
-                parsed = json.loads(message)
-            except json.JSONDecodeError:
-                buffer.popleft()
-                continue
-           
-            if 'u' not in parsed:
-                buffer.popleft()
-                continue
-
-            message_final_update_id = parsed ['u']
-            if message_final_update_id > order_book_last_update_id:
-                print(f'Match is found: {parsed}')
-                return parsed
-            else:
-                buffer.popleft()
-        print('No matching message found in the buffer yet.')
 
 async def create_and_save_local_order_book(snapshot, order_book_last_update_id):
     order_book = OrderBook(snapshot) 
@@ -206,44 +20,7 @@ async def create_and_save_local_order_book(snapshot, order_book_last_update_id):
 
     return order_book
 
-  
-async def to_do_processing_logic(order_book, message):
-        print('Trying to execute the logic')
-        order_book.ob_bids, order_book.ob_asks = await order_book.update_order_book(message)
-        order_book.ob_bids_prices, order_book.ob_asks_prices = await order_book.update_price_lists(message)   
-        print('Processing is done')   
-        await asyncio.sleep (0.1)
-
-
-async def ws_processing(order_book, buffer):
-    # Infinite processing function
-    while True:
-        if not buffer:
-            await asyncio.sleep(0.1)
-            continue
-
-        try:
-            print ('Continue processing')
-            message = json.loads(buffer.popleft())
-            print(f'Printing the message I am going to process: {message}. It has type {type(message)}')
-            await to_do_processing_logic(order_book, message)
-            print('Job done, let me check if the next message is valid...')
-            last_update_current_message = message['u']
-            first_update_next_message =  json.loads(buffer[0])['U']
-            print (f'Last update current {last_update_current_message}, first update next {first_update_next_message}')
-            if int(last_update_current_message) + 1 == first_update_next_message:
-                print("All good with the next message")
-            else:
-                print('There is some issue with the next message') 
-                raise MissingMessageInIngestedStream ("There is a gap between update IDs between the processed and following message. Buffer is not valid.") 
-                # Here should be some logic around re-fetching order book and doing sync again - perhaps as a part of the orchestrator or main loop      
-            await asyncio.sleep (0.1)
-        except Exception as e:
-            print(f'Something is wrong with processing: {e}')
-
-    
-
-
+ 
 async def orchestrator(websocket):
     buffer = deque([])
     ws_ingestion_task = None
@@ -263,7 +40,7 @@ async def orchestrator(websocket):
         raise  
 
     try:
-        matching_message = await asyncio.wait_for(find_matching_messsage(order_book_last_update_id, buffer), timeout = 5)  
+        matching_message = await asyncio.wait_for(find_matching_message(order_book_last_update_id, buffer), timeout = 5)  
         print(f'Order book snapshot is fetched. Matching message is found {matching_message}. Starting processing') 
     except asyncio.TimeoutError:
         print('No suitable Websocket stream message fetched, can\'t proceed')
@@ -276,8 +53,6 @@ async def orchestrator(websocket):
     ws_processing_task = asyncio.create_task(ws_processing(order_book, buffer))
     return ws_ingestion_task, ws_processing_task, order_book
     
-
-
 
 async def run_code():
     try:
@@ -324,7 +99,7 @@ asyncio.run(run_code()) #Creates the event loop and runs coroutines
 # # Subscribe to a relevant channel ✅ 
 # # Save a local copy of the order book ✅ 
 
-# # Define methods to process information
+# # Define methods to process information ✅ 
 # # Impement cheksum func to ensure the correctness of the local order book
 
 
