@@ -56,17 +56,19 @@ It verifies the consistency of the local order book by synchronizing with Binanc
 Run the main event loop:
 ```bash
 python main.py
+```
 
 
-## 🖥️ Demo Output
+## 🖥️ Demo Output - tests
 
 ![Core logic tests output](data/tests_output_order_book_class.png)
 
 ## 📁 File Structure
+Run the main event loop:
 ```
 local_order_book/
 │
-├── main.py                   # orchestrator / entry point
+├── main.py                   # Entry point
 │
 ├── wb_sockets/               # WebSockets related code
 │   ├── subscribing.py        # subscribing to the WebSockets stream
@@ -88,5 +90,4 @@ local_order_book/
 ├── requirements.txt
 └── README.md
 ```
-
 
