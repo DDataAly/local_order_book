@@ -68,23 +68,24 @@ Run the main event loop:
 ```
 local_order_book/
 │
-├── main.py                   # Entry point
+├── main.py                        # Entry point
 │
-├── wb_sockets/               # WebSockets related code
-│   ├── subscribing.py        # subscribing to the WebSockets stream
-│   ├── ingesting.py          # ws_ingestion logic (save depth update messages to the local buffer)
-│   ├── syncing.py            # match the depth update messages to the order book snapshot 
-│   └── processing.py         # ws_processing logic (apply updates to OrderBook)
+├── src/
+│   ├── wb_sockets/               # WebSockets related code
+│   │   ├── subscribing.py        # subscribing to the WebSockets stream
+│   │   ├── ingesting.py          # ws_ingestion logic (save depth update messages to the local buffer)
+│   │   ├── syncing.py            # match the depth update messages to the order book snapshot 
+│   │   └── processing.py         # ws_processing logic (apply updates to OrderBook)
+│   │
+│   ├── order_book/               # Order book domain logic
+│   │    └── order_book_class.py  # OrderBook class and update methods
+│   │
+│   └── utils/                    # Reusable helpers
+│      ├── logger.py              # logging setup
+│      └── helpers.py             # miscellaneous utilities (path finder at this stage)
 │
-├── order_book/               # Order book domain logic
-│   └── order_book_class.py   # OrderBook class and update methods
-│
-├── utils/                    # Reusable helpers
-│   ├── logger.py             # logging setup
-│   └── helpers.py            # miscellaneous utilities (path finder at this stage)
-│
-├── tests/                    # Unit tests
-│    └── test_order_book.py    # core processing logic test
+├── tests/                        # Unit tests
+│    └── test_order_book.py       # core processing logic test
 │
 ├── .gitignore
 ├── requirements.txt
