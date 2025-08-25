@@ -87,7 +87,6 @@ local_order_book/
 ├── .gitignore
 ├── requirements.txt
 └── README.md
-
 ```
 
 
