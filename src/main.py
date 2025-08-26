@@ -1,58 +1,9 @@
 import asyncio
 import websockets
-import json
-from collections import deque
-from order_book.order_book_class import OrderBook
-from utils.helpers import path_initial_shapshot
-from wb_sockets import run_the_subscriber, ws_ingestion, fetch_order_book_snapshot, find_matching_message, ws_processing
+from order_book.orchestrator import orchestrator
+from wb_sockets import run_the_subscriber
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
-
-async def create_and_save_local_order_book(snapshot, order_book_last_update_id):
-    order_book = OrderBook(snapshot) 
-    order_book.ob_bids, order_book.ob_asks = await order_book.extract_order_book_bids_asks()
-    order_book.ob_bids_prices, order_book.ob_asks_prices =  await order_book.extract_order_book_prices()
-    print(f'Order book object has been initialised with order book with the last update ID {order_book_last_update_id}')   
-    
-    with open ((path_initial_shapshot), 'w') as file:
-        json.dump(snapshot, file)
-    print('Order book copy is saved locally')
-
-    return order_book
-
- 
-async def orchestrator(websocket):
-    buffer = deque([])
-    ws_ingestion_task = None
-    ws_processing_task = None
-    order_book = None
-
-    ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
-
-    try:
-        snapshot, order_book_last_update_id = await asyncio.wait_for(fetch_order_book_snapshot(buffer), timeout=5)
-        print('Suitable order book fetched, saving it now....')
-
-    except asyncio.TimeoutError:
-        print('No suitable order book fetched, can\'t proceed')
-        ws_ingestion.cancel()
-        await asyncio.gather(ws_ingestion_task, return_exceptions=True)
-        raise  
-
-    try:
-        matching_message = await asyncio.wait_for(find_matching_message(order_book_last_update_id, buffer), timeout = 5)  
-        print(f'Order book snapshot is fetched. Matching message is found {matching_message}. Starting processing') 
-    except asyncio.TimeoutError:
-        print('No suitable Websocket stream message fetched, can\'t proceed')
-        ws_ingestion.cancel()
-        await asyncio.gather(ws_ingestion_task, return_exceptions=True)
-        raise 
-
-    order_book = await create_and_save_local_order_book(snapshot, order_book_last_update_id)
-
-    ws_processing_task = asyncio.create_task(ws_processing(order_book, buffer))
-    return ws_ingestion_task, ws_processing_task, order_book
-    
 
 async def run_code():
     try:
@@ -87,20 +38,6 @@ async def run_code():
         
 asyncio.run(run_code()) #Creates the event loop and runs coroutines  
 
-
-
-
-
-
-
-
-
-# # Establish a websocket connection to a crypto exchange and ensure it closes properly ✅ 
-# # Subscribe to a relevant channel ✅ 
-# # Save a local copy of the order book ✅ 
-
-# # Define methods to process information ✅ 
-# # Impement cheksum func to ensure the correctness of the local order book
 
 
 
