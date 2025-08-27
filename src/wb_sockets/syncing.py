@@ -9,9 +9,9 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
     Extracts the ID of the first update in the first valid depth update message,
     which is used to synchronise the WebSocket stream with the API order book snapshot.
     Args:
-        buffer: a deque to keep incoming WebSocket stream messages
+        buffer (collections.deque[str]) - incoming WebSocket stream messages waiting to be processed
     Returns:
-        int - The 'U' value (first update ID) from the first valid depth update message.
+        order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
     """
     while not buffer:
         await asyncio.sleep(0.01)
@@ -27,7 +27,7 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
             print(f'Skipping non-depthUpdate message: {parsed}')
         await asyncio.sleep(0.01)
 
-async def get_order_book() -> int:
+async def get_order_book() -> tuple [dict, int]:
     """
     Sends a request to get a copy of the order book from Binance REST API using aiohttp.ClientSession()
     to avoid blocking the event loop. This allows ws_ingestion to run simultaneously with this function.
@@ -36,7 +36,9 @@ async def get_order_book() -> int:
     This ID is used to synchronize the order book with the WebSocket depth stream.
 
     Returns:
-        int - The last update ID from the order book copy 
+        tuple:
+            snapshot (dict): parsed JSON order book snapshot from Binance REST API
+            order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
     """
     async with aiohttp.ClientSession() as session:
         async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
@@ -45,7 +47,21 @@ async def get_order_book() -> int:
     return snapshot, order_book_last_update_id
 
 
-async def fetch_order_book_snapshot(buffer) -> None:
+async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
+    """
+    Continuously requests a copy of the order book from the Binance REST API and compares
+    its "lastUpdateId" with the 'U' value (first update ID) from the earliest valid
+    depth update message in the WebSocket buffer.
+
+    Once the snapshot's "lastUpdateId" is greater than or equal to the first 'U' value,
+    a valid snapshot has been found and is returned.
+    Args:
+        buffer (collections.deque[str]) - incoming WebSocket stream messages waiting to be processed
+    Returns:
+        tuple:
+            snapshot (dict): parsed JSON order book snapshot from Binance REST API
+            order_book_last_update_id (int): the "lastUpdateId" of that snapshot
+    """
     while True:
         await asyncio.sleep (0.1)
         snapshot, order_book_last_update_id = await get_order_book()  
