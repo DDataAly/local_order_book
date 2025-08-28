@@ -43,7 +43,7 @@ It verifies the consistency of the local order book by synchronizing with Binanc
 - ✅ Test processing logic thoroughly  
 - 🚧 Integrate all components into a single async event loop  
 - ⏳ Test the async event loop  
-- ⏳ Implement checksum validation  
+- 🚧 Implement checksum validation using CRC32 
 - ⏳ Replace print statements with structured logging  
 - ⏳ Implement buffer size monitoring  
 - ⏳ Add client-facing order book snapshot requests  
