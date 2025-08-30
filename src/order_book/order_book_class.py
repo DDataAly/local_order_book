@@ -60,15 +60,13 @@ class OrderBook:
         ob_asks_list = sorted(self.ob_asks.items())
         self.content ['bids'] = [[f'{bid[0]:.8f}', f'{bid[1]:.8f}'] for bid in ob_bids_list]
         self.content ['asks'] = [[f'{ask[0]:.8f}', f'{ask[1]:.8f}'] for ask in ob_asks_list]
-        return self.content                 
-
+                       
     
     async def trim_order_book(self, num_records: int =5000) -> dict:
         # Binance order book snapshot contains 5000 records
         # We need to trim the order book as we have reliable data only for 5000 records
         self.content['bids'] = self.content['bids'][0:num_records]
         self.content['asks'] = self.content['asks'][0:num_records]
-        return self.content
     
 
     # Maintaining price list - not strictly required for order book
