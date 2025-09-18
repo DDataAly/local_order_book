@@ -41,9 +41,16 @@ async def get_order_book() -> tuple [dict, int]:
             order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
     """
     async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
-            response.raise_for_status()
-            snapshot = await response.json()
+        try:
+            async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
+                response.raise_for_status()
+                snapshot = await response.json()
+        except aiohttp.ClientError as e:
+            print (f'Error fetching the order book snapshot: {e}') 
+            raise
+        except aiohttp.ContentTypeError as e:
+            print(f'The server response file is not a valid json: {e}') 
+            raise
     return snapshot, snapshot.get("lastUpdateId")
 
 
