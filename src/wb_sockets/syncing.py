@@ -51,6 +51,9 @@ async def get_order_book() -> tuple [dict, int]:
         except aiohttp.ContentTypeError as e:
             print(f'The server response file is not a valid json: {e}') 
             raise
+        except Exception as e:
+            print(f'An error occurred fetching the order book copy: {e}')
+            raise
     return snapshot, snapshot.get("lastUpdateId")
 
 
