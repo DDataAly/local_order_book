@@ -26,29 +26,37 @@ async def to_do_processing_logic(order_book, message):
     )
     print("Processing is done")
 
-# Updating in progress - need to think about empty buffer and putting the message on the shelf
-async def is_continuous(curr_msg, buffer):
-    curr_msg_last_id = curr_msg["u"]
-    next_msg_first_id = json.loads(buffer[0])["U"]
-    print(
-        f"Last update current {curr_msg_last_id}, first update next {next_msg_first_id}"
-    )
-    if int(curr_msg_last_id) + 1 == next_msg_first_id:
-        print("Condition is met")
-        return True
-    else: 
-        following_msg_first_id = json.loads(buffer[1])['U']
-        if int(curr_msg_last_id) +1 == following_msg_first_id:
-            buffer.popleft()
+
+async def is_continuous(curr_msg, buffer, max_num_skipped_msg = 2):
+    target_id = int(curr_msg["u"]) + 1
+    shelf = []
+
+    while len(shelf) <= max_num_skipped_msg:
+        # If buffer is empty, wait for a new message being added by ws_ingestion
+        while len(buffer) < 1:
+            await asyncio.sleep(0.1)
+
+        next_msg_first_id = int(json.loads(buffer[0])["U"])
+        print(f"Last update current {curr_msg['u']}, first update next {next_msg_first_id}")
+
+        # If there is no id gaps between messages
+        if next_msg_first_id == target_id:
+            print("Condition is met")
             return True
-    print("Condition is not met")
+
+        # If there is a gap between msgs, we pop the problematic msg and put it on the shelf
+        skipped_msg = buffer.popleft()
+        shelf.append(skipped_msg)
+        print(f"Skipped a message. Shelf size: {len(shelf)}")
+
+    print(f"Condition is not met after skipping {max_num_skipped_msg} messages")
     return False
 
-# Updating in progress
+# Updating in progress - don't need len(buffer) < 2 check here since is_continuous handling this
 async def ws_processing(order_book, buffer):
     # Infinite processing function
     while True:
-        if not buffer:
+        if len(buffer) < 2:
             await asyncio.sleep(0.1)
             continue
 
