@@ -384,10 +384,10 @@ class TestSortUpdatedOrderBook:
     async def test_returns_correct_dict(self, small_order_book, short_message):
         await small_order_book.extract_order_book_bids_asks()
         await small_order_book.update_order_book(short_message)
-        result = await small_order_book.sort_updated_order_book()
-        assert isinstance(result, dict)
-        assert len(result.keys()) == 3
-        assert set(['lastUpdateId','bids','asks']) == set(result.keys())
+        await small_order_book.sort_updated_order_book()
+        assert isinstance(small_order_book.content, dict)
+        assert len(small_order_book.content.keys()) == 3
+        assert set(['lastUpdateId','bids','asks']) == set(small_order_book.content.keys())
 
 
     @pytest.mark.it('sorts bids in desc and asks in asc order')
@@ -395,9 +395,9 @@ class TestSortUpdatedOrderBook:
     async def test_returns_sorts_bids_asks(self, big_order_book, long_message):
         await big_order_book.extract_order_book_bids_asks()
         await big_order_book.update_order_book(long_message)
-        result = await big_order_book.sort_updated_order_book()
-        assert all(result['bids'][i] > result['bids'][i + 1] for i in range(0, (len(result['bids'])) - 1))
-        assert all(result['asks'][i] < result['asks'][i + 1] for i in range(0, (len(result['asks'])) - 1))
+        await big_order_book.sort_updated_order_book()
+        assert all(big_order_book.content['bids'][i] > big_order_book.content['bids'][i + 1] for i in range(0, (len(big_order_book.content['bids'])) - 1))
+        assert all(big_order_book.content['asks'][i] < big_order_book.content['asks'][i + 1] for i in range(0, (len(big_order_book.content['asks'])) - 1))
   
 
     @pytest.mark.it('returns prices and qtys as lists containing strings of numbers with 8 digits after floating point')
@@ -405,11 +405,11 @@ class TestSortUpdatedOrderBook:
     async def test_returns_qty_prices_correct_format(self, small_order_book, short_message):
         await small_order_book.extract_order_book_bids_asks()
         await small_order_book.update_order_book(short_message)
-        result = await small_order_book.sort_updated_order_book()
-        assert all(isinstance(result['bids'][i],list) for i in range(0,(len(result['bids'])-1)))
-        assert all(isinstance(result['bids'][i][0],str) for i in range(0,(len(result['bids'])-1)))
-        assert all(isinstance(result['bids'][i][1],str) for i in range(0,(len(result['bids'])-1)))
-        assert all(len(result['bids'][i][0].split('.')[1]) == 8 for i in range(0,(len(result['bids'])-1)))
+        await small_order_book.sort_updated_order_book()
+        assert all(isinstance(small_order_book.content['bids'][i],list) for i in range(0,(len(small_order_book.content['bids'])-1)))
+        assert all(isinstance(small_order_book.content['bids'][i][0],str) for i in range(0,(len(small_order_book.content['bids'])-1)))
+        assert all(isinstance(small_order_book.content['bids'][i][1],str) for i in range(0,(len(small_order_book.content['bids'])-1)))
+        assert all(len(small_order_book.content['bids'][i][0].split('.')[1]) == 8 for i in range(0,(len(small_order_book.content['bids'])-1)))
 
 
 class TestTrimOrderBook:
@@ -420,8 +420,8 @@ class TestTrimOrderBook:
         await big_order_book.extract_order_book_bids_asks()
         await big_order_book.update_order_book(long_message)  
         await big_order_book.sort_updated_order_book()  
-        result = await big_order_book.trim_order_book(3)
-        assert result == {"lastUpdateId": 74105025813, 
+        await big_order_book.trim_order_book(3)
+        assert big_order_book.content == {"lastUpdateId": 74105025813, 
                           "bids" : [
                             ['113688.21000000' , '0.40000000'],
                             ['113678.85000000' , '7.25330000'], 
