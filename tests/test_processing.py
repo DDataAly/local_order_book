@@ -135,6 +135,7 @@ class TestWsProcessing():
         @pytest.mark.describe('Tests to ensure ws_processing runs correctly')
         @pytest.mark.asyncio
         async def test_updates_order_book_continuous_buffer_new_bids_asks(self,curr_msg, order_book):
+                # Creates a buffer from individual WebSockets messages
                 next_msg = {"e":"depthUpdate",
                         "E":1753786825814,
                         "s":"BTCUSDT",
@@ -144,20 +145,22 @@ class TestWsProcessing():
                         "a":[["108304.00000000","2.77750000"]]}
                 buffer = deque([json.dumps(curr_msg), json.dumps(next_msg)])
 
+                # Since ws_processing runs indefinitely we need to create a task and cancel it after it runs for a short time
                 task = asyncio.create_task(ws_processing(order_book, buffer)) 
                 await asyncio.sleep(0.5)
-
+                
+                # Making assert statement whilst ws_processing task is still running
                 assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0: 1.7315}
                 assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.7775}
-
+                
+                # Cancelling the task - asyncio raises CancelledError in this case, and we await to allow the task end properly
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                         await task
 
 
         @pytest.mark.asyncio
-        async def test_updates_order_book_continuous_buffer_update_bids_asks(self, order_book):
-                # Creates a buffer from individual WebSockets messages
+        async def test_updates_order_book_continuous_buffer_update_or_delete_bids_asks(self, order_book):
                 curr_msg = {"e":"depthUpdate",
                         "E":1753786825814,
                         "s":"BTCUSDT",
@@ -184,5 +187,34 @@ class TestWsProcessing():
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                         await task
-                                
+
+        # Assertion fails - need to check what message we actually process                        
+        @pytest.mark.asyncio
+        async def test_updates_order_book_skipping_one_faulty_msg(self, curr_msg, order_book): 
+                next_msg_faulty = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":53652024513,
+                        "u":53652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+        
+                following_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024513,
+                        "u":73652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
                 
+                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg_faulty), json.dumps(following_msg)])
+                 
+                task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                await asyncio.sleep(0.5)               
+
+                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 114300:0.7315}
+                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 108304.0:2.7775}
+                
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                        await task       
