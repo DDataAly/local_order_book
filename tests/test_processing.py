@@ -1,7 +1,10 @@
 import pytest
+import pytest_asyncio
 import json
+import asyncio
 from collections import deque
-from src.wb_sockets.processing import is_continuous
+from src.wb_sockets.processing import is_continuous, ws_processing
+from src.order_book.order_book_class import OrderBook
 
 @pytest.fixture()
 def curr_msg():
@@ -15,43 +18,99 @@ def curr_msg():
     }
     return curr_msg
 
-class TestIsContinuous():
-    @pytest.mark.describe('Tests to ensure correct buffer continuity validation')
-    @pytest.mark.asyncio
-    async def test_returns_true_for_buffer_no_gaps(self,curr_msg):
-        next_msg = {"e":"depthUpdate",
+@pytest_asyncio.fixture
+async def order_book():
+    content = {"lastUpdateId": 74105025813, 
+                        "bids": [["113678.85000000", "7.25330000"], 
+                                ["113678.84000000", "0.77360000"]
+                            ], 
+                        "asks": [["113678.86000000", "1.93563000"], 
+                                ["113900.35000000", "0.13677000"]
+                                ]
+                            }
+    order_book = OrderBook(content)
+    await order_book.extract_order_book_bids_asks()
+    return order_book
+
+@pytest_asyncio.fixture
+async def setup_buffer (curr_msg):
+     def _make_buffer(num_faulty_msg):
+        buffer_list = [curr_msg]
+        
+        for i in range (num_faulty_msg):
+                faulty_msg = {"e":"depthUpdate",
+                "E":1753786825814,
+                "s":"BTCUSDT",
+                "U":53652024513+i,
+                "u":53652024517+i,
+                "b":[["114300.00000000", "0.73150000"]],
+                "a":[["108304.00000000","2.77750000"]]}
+                buffer_list.append(faulty_msg)
+        
+        following_valid_msg = {"e":"depthUpdate",
                 "E":1753786825814,
                 "s":"BTCUSDT",
                 "U":73652024513,
                 "u":73652024517,
                 "b":[["114300.00000000", "0.73150000"]],
                 "a":[["108304.00000000","2.77750000"]]}
-        buffer = deque([json.dumps (next_msg)])
-        print(buffer)
+        buffer_list.append(following_valid_msg)
+                
+        final_valid_msg = {"e":"depthUpdate",
+                "E":1753786825814,
+                "s":"BTCUSDT",
+                "U":73652024518,
+                "u":73652024522,
+                "b":[["114300.00000000", "0.00150000"]],
+                "a":[["108304.00000000","2.77750000"]]}
+        buffer_list.append(final_valid_msg)
 
-        assert await is_continuous (curr_msg, buffer) 
+        buffer = deque([json.dumps(msg) for msg in buffer_list])
+        
+        return buffer
+
+     return _make_buffer
+        
+
+@pytest.mark.describe('Tests to ensure correct buffer continuity validation - is_continuous function')   
+class TestIsContinuous:
+    
+    @pytest.mark.asyncio
+    async def test_returns_true_for_buffer_no_gaps(self, curr_msg):
+        next_msg = {
+            "e": "depthUpdate",
+            "E": 1753786825814,
+            "s": "BTCUSDT",
+            "U": 73652024513,
+            "u": 73652024517,
+            "b": [["114300.00000000", "0.73150000"]],
+            "a": [["108304.00000000", "2.77750000"]]
+        }
+        buffer = deque([json.dumps(next_msg)])
+        assert await is_continuous(curr_msg, buffer) 
 
     @pytest.mark.asyncio    
-    async def test_returns_true_for_buffer_with_one_invalid_msg(self,curr_msg):
-        next_msg = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":53652024513,
-                "u":53652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        
-        following_msg = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":73652024513,
-                "u":73652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
+    async def test_returns_true_for_buffer_with_one_invalid_msg(self, curr_msg):
+        next_msg = {
+            "e": "depthUpdate",
+            "E": 1753786825814,
+            "s": "BTCUSDT",
+            "U": 53652024513,
+            "u": 53652024517,
+            "b": [["114300.00000000", "0.73150000"]],
+            "a": [["108304.00000000", "2.77750000"]]
+        }
+        following_msg = {
+            "e": "depthUpdate",
+            "E": 1753786825814,
+            "s": "BTCUSDT",
+            "U": 73652024513,
+            "u": 73652024517,
+            "b": [["114300.00000000", "0.73150000"]],
+            "a": [["108304.00000000", "2.77750000"]]
+        }
         buffer = deque([json.dumps(next_msg), json.dumps(following_msg)])
-        print(buffer)
-
-        assert await is_continuous (curr_msg, buffer) 
+        assert await is_continuous(curr_msg, buffer)
 
     @pytest.mark.asyncio    
     async def test_returns_true_for_buffer_with_two_invalid_msgs(self,curr_msg):
@@ -112,4 +171,95 @@ class TestIsContinuous():
         print(buffer)
 
         assert not await is_continuous (curr_msg, buffer) 
-            
+
+@pytest.mark.describe('Tests to ensure ws_processing runs correctly with various buffer content')
+class TestWsProcessing:
+        @pytest.mark.asyncio
+        async def test_updates_order_book_continuous_buffer_new_bids_asks(self,curr_msg, order_book):
+                # Creates a buffer from individual WebSockets messages
+                next_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024513,
+                        "u":73652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg)])
+
+                # Since ws_processing runs indefinitely we need to create a task and cancel it after it runs for a short time
+                task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                await asyncio.sleep(0.5)
+                
+                # Making assert statement whilst ws_processing task is still running
+                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0: 1.7315}
+                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.7775}
+                
+                # Cancelling the task - asyncio raises CancelledError in this case, and we await to allow the task end properly
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                        await task
+
+
+        @pytest.mark.asyncio
+        async def test_updates_order_book_continuous_buffer_update_or_delete_bids_asks(self, order_book):
+                curr_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024499,
+                        "u":73652024512,
+                        "b":[["113678.85000000", "2.00000000"]],
+                        "a":[["113900.35000000","0.00000000"]]
+                        }
+                next_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024513,
+                        "u":73652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg)])
+                
+                task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                await asyncio.sleep(0.5)
+
+                assert order_book.ob_bids == {113678.85: 2.0, 113678.84: 0.7736}
+                assert order_book.ob_asks =={113678.86 : 1.93563}
+
+  
+        @pytest.mark.asyncio
+        async def test_updates_order_book_skipping_one_faulty_msg(self, curr_msg, order_book): 
+                next_msg_faulty = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":53652024513,
+                        "u":53652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+        
+                following_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024513,
+                        "u":73652024517,
+                        "b":[["114300.00000000", "0.73150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+                
+                after_following_msg = {"e":"depthUpdate",
+                        "E":1753786825814,
+                        "s":"BTCUSDT",
+                        "U":73652024518,
+                        "u":73652024522,
+                        "b":[["114300.00000000", "0.00150000"]],
+                        "a":[["108304.00000000","2.77750000"]]}
+                
+                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg_faulty), json.dumps(following_msg), json.dumps(after_following_msg)])
+                 
+                task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                await asyncio.sleep(0.5)               
+
+                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
+                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
+                
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                        await task       
