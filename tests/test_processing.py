@@ -34,10 +34,10 @@ async def order_book():
 
 @pytest_asyncio.fixture
 async def setup_buffer (curr_msg):
-     def _make_buffer(num_faulty_msg):
+     def _make_buffer(num_faulty_msgs):
         buffer_list = [curr_msg]
         
-        for i in range (num_faulty_msg):
+        for i in range (num_faulty_msgs):
                 faulty_msg = {"e":"depthUpdate",
                 "E":1753786825814,
                 "s":"BTCUSDT",
@@ -263,3 +263,9 @@ class TestWsProcessing:
                 task.cancel()
                 with pytest.raises(asyncio.CancelledError):
                         await task       
+
+        # Continue here - re-writing the previous test using the setup_buffer fixture and parametrisation to test skipping 1,2,3 faulty messages
+        # @pytest.mark.it('correctly handles one, two and more of faulty messages in the buffer')
+        # @pytest.mark.parametrize('num_faulty_msgs, should raise MissingMessageInIngestedStream',
+        #                          [])
+
