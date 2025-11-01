@@ -32,6 +32,46 @@ async def order_book():
     await order_book.extract_order_book_bids_asks()
     return order_book
 
+@pytest_asyncio.fixture
+async def setup_buffer (curr_msg):
+     def _make_buffer(num_faulty_msg):
+        buffer_list = [curr_msg]
+        
+        for i in range (num_faulty_msg):
+                faulty_msg = {"e":"depthUpdate",
+                "E":1753786825814,
+                "s":"BTCUSDT",
+                "U":53652024513+i,
+                "u":53652024517+i,
+                "b":[["114300.00000000", "0.73150000"]],
+                "a":[["108304.00000000","2.77750000"]]}
+                buffer_list.append(faulty_msg)
+        
+        following_valid_msg = {"e":"depthUpdate",
+                "E":1753786825814,
+                "s":"BTCUSDT",
+                "U":73652024513,
+                "u":73652024517,
+                "b":[["114300.00000000", "0.73150000"]],
+                "a":[["108304.00000000","2.77750000"]]}
+        buffer_list.append(following_valid_msg)
+                
+        final_valid_msg = {"e":"depthUpdate",
+                "E":1753786825814,
+                "s":"BTCUSDT",
+                "U":73652024518,
+                "u":73652024522,
+                "b":[["114300.00000000", "0.00150000"]],
+                "a":[["108304.00000000","2.77750000"]]}
+        buffer_list.append(final_valid_msg)
+
+        buffer = deque([json.dumps(msg) for msg in buffer_list])
+        
+        return buffer
+
+     return _make_buffer
+        
+
 @pytest.mark.describe('Tests to ensure correct buffer continuity validation - is_continuous function')   
 class TestIsContinuous:
     
