@@ -3,7 +3,7 @@ import pytest_asyncio
 import json
 import asyncio
 from collections import deque
-from src.wb_sockets.processing import is_continuous, ws_processing
+from src.wb_sockets.processing import is_continuous, ws_processing, MissingMessageInIngestedStream
 from src.order_book.order_book_class import OrderBook
 
 @pytest.fixture()
@@ -175,7 +175,7 @@ class TestIsContinuous:
 @pytest.mark.describe('Tests to ensure ws_processing runs correctly with various buffer content')
 class TestWsProcessing:
         @pytest.mark.asyncio
-        async def test_updates_order_book_continuous_buffer_new_bids_asks(self,curr_msg, order_book):
+        async def test_updates_order_book_msg_with_new_bids_asks(self,curr_msg, order_book):
                 # Creates a buffer from individual WebSockets messages
                 next_msg = {"e":"depthUpdate",
                         "E":1753786825814,
@@ -201,7 +201,7 @@ class TestWsProcessing:
 
 
         @pytest.mark.asyncio
-        async def test_updates_order_book_continuous_buffer_update_or_delete_bids_asks(self, order_book):
+        async def test_updates_order_book_msg_to_update_or_delete_bids_asks(self, order_book):
                 curr_msg = {"e":"depthUpdate",
                         "E":1753786825814,
                         "s":"BTCUSDT",
@@ -225,47 +225,86 @@ class TestWsProcessing:
                 assert order_book.ob_bids == {113678.85: 2.0, 113678.84: 0.7736}
                 assert order_book.ob_asks =={113678.86 : 1.93563}
 
-  
+      
+        @pytest.mark.it('correctly handles one, two and more of faulty messages in the buffer')
+        @pytest.mark.parametrize('num_faulty_msgs, should_raise_MissingMessageInIngestedStream',
+                                 [
+                                       (0, False),
+                                       (1, False),
+                                       (2, False),
+                                       (4, True)
+                                 ],
+                                 ids = ['no faulty messages in the buffer',
+                                        'one faulty message in the buffer',
+                                        'two consequent faulty messages in the buffer',
+                                        'more than 2 consequent faulty messages in the buffer']
+                                )
         @pytest.mark.asyncio
-        async def test_updates_order_book_skipping_one_faulty_msg(self, curr_msg, order_book): 
-                next_msg_faulty = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":53652024513,
-                        "u":53652024517,
-                        "b":[["114300.00000000", "0.73150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
+        async def test_processes_buffer_with_faulty_messages(self, order_book, setup_buffer, num_faulty_msgs, should_raise_MissingMessageInIngestedStream):
+                # HOF - pytest handles buffer = setup_buffer(curr_msg) behind the scene
+                # So here we call setup_buffer(num_faulty_msgs) and this setup_buffer is build by pytest with curr_msg already
+                buffer = setup_buffer(num_faulty_msgs) 
+                
+                if should_raise_MissingMessageInIngestedStream:
+                    with pytest.raises (MissingMessageInIngestedStream) as e:
+                        await ws_processing(order_book, buffer)
+                    assert "The message stream is not continuous. Launching re-sync" in str(e.value)
+
+                else:
+                        task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                        await asyncio.sleep(0.5)     
+                        try:
+                                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
+                                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
+                
+                        finally:
+                                task.cancel()
+                                with pytest.raises(asyncio.CancelledError):
+                                        await task  
+
+
+
+        # Can safely delete as I did a parametrised test covering this case above -test_processes_buffer_with_faulty_messages
+        # keeping for now in case need to do something similar
+        # @pytest.mark.asyncio
+        # async def test_updates_order_book_skipping_one_faulty_msg(self, curr_msg, order_book): 
+        #         next_msg_faulty = {"e":"depthUpdate",
+        #                 "E":1753786825814,
+        #                 "s":"BTCUSDT",
+        #                 "U":53652024513,
+        #                 "u":53652024517,
+        #                 "b":[["114300.00000000", "0.73150000"]],
+        #                 "a":[["108304.00000000","2.77750000"]]}
         
-                following_msg = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":73652024513,
-                        "u":73652024517,
-                        "b":[["114300.00000000", "0.73150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
+        #         following_msg = {"e":"depthUpdate",
+        #                 "E":1753786825814,
+        #                 "s":"BTCUSDT",
+        #                 "U":73652024513,
+        #                 "u":73652024517,
+        #                 "b":[["114300.00000000", "0.73150000"]],
+        #                 "a":[["108304.00000000","2.77750000"]]}
                 
-                after_following_msg = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":73652024518,
-                        "u":73652024522,
-                        "b":[["114300.00000000", "0.00150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
+        #         after_following_msg = {"e":"depthUpdate",
+        #                 "E":1753786825814,
+        #                 "s":"BTCUSDT",
+        #                 "U":73652024518,
+        #                 "u":73652024522,
+        #                 "b":[["114300.00000000", "0.00150000"]],
+        #                 "a":[["108304.00000000","2.77750000"]]}
                 
-                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg_faulty), json.dumps(following_msg), json.dumps(after_following_msg)])
+        #         buffer = deque([json.dumps(curr_msg), json.dumps(next_msg_faulty), json.dumps(following_msg), json.dumps(after_following_msg)])
                  
-                task = asyncio.create_task(ws_processing(order_book, buffer)) 
-                await asyncio.sleep(0.5)               
+        #         task = asyncio.create_task(ws_processing(order_book, buffer)) 
+        #         await asyncio.sleep(0.5)               
 
-                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
-                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
+        #         assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
+        #         assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
                 
-                task.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                        await task       
+        #         task.cancel()
+        #         with pytest.raises(asyncio.CancelledError):
+        #                 await task   
+              
 
-        # Continue here - re-writing the previous test using the setup_buffer fixture and parametrisation to test skipping 1,2,3 faulty messages
-        # @pytest.mark.it('correctly handles one, two and more of faulty messages in the buffer')
-        # @pytest.mark.parametrize('num_faulty_msgs, should raise MissingMessageInIngestedStream',
-        #                          [])
+
+
 
