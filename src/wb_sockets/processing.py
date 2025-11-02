@@ -52,42 +52,32 @@ async def is_continuous(curr_msg, buffer, max_num_skipped_msg = 2):
     print(f"Condition is not met after skipping {max_num_skipped_msg} messages")
     return False
 
-# Updating in progress - don't need len(buffer) < 2 check here since is_continuous handling this
+
 async def ws_processing(order_book, buffer):
     # Infinite processing function
     while True:
-        if len(buffer) < 2:
+        if len(buffer) < 1:
             await asyncio.sleep(0.1)
             continue
 
         try:
             print("Continue processing")
             print(f"This is buffer (len={len(buffer)}): {buffer}")
-            # msg_str = buffer.popleft()
+            msg_str = buffer.popleft()
             print(f"After popleft (len={len(buffer)}): {buffer}")
             curr_msg = json.loads(msg_str)
-            print("Parsed JSON OK")
-            if buffer:
-                print("Cats")
+            print(f"Parsed JSON OK. This is curr_msg: {curr_msg}")
 
-            if buffer:
-                print("Cats")
-                if await is_continuous(curr_msg, buffer):
-                    print(
-                        f"Printing the message I am going to process: {curr_msg}. It has type {type(curr_msg)}"
-                    )
-                    await to_do_processing_logic(order_book, curr_msg)
-                else:
-                    raise MissingMessageInIngestedStream(
-                        "There is a gap between update IDs between the processed and following message. Current message haven't been processed and will stay in the buffer for retry."
-                    )
-                await asyncio.sleep(0.1)
 
-        except MissingMessageInIngestedStream as e:
-            buffer.appendleft(curr_msg)
+            if await is_continuous(curr_msg, buffer):
+                print(f"Printing the message I am going to process: {curr_msg}. It has type {type(curr_msg)}")
+                await to_do_processing_logic(order_book, curr_msg)
+            else:
+                raise MissingMessageInIngestedStream(
+                    "The message stream is not continuous. Launching re-sync"
+                )
+            
             await asyncio.sleep(0.1)
-            print(f"Continuity gap detected: {e}")
-            raise
 
         except Exception as e:
             buffer.appendleft(curr_msg)
