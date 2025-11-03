@@ -85,7 +85,9 @@ local_order_book/
 │      └── helpers.py             # miscellaneous utilities (path finder at this stage)
 │
 ├── tests/                        # Unit tests
-│    └── test_order_book.py       # core processing logic test
+│    ├── test_order_book_class.py # core processing logic tests
+│    ├── test_processing.py       # tests around handling invalid messages in the buffer
+│    └── test_syncing.py          # API call mocking test - getting a copy of the order book
 │
 ├── .gitignore
 ├── requirements.txt
