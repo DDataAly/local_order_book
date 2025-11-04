@@ -78,7 +78,8 @@ local_order_book/
 │   │   └── processing.py         # ws_processing logic (apply updates to OrderBook)
 │   │
 │   ├── order_book/               # Order book domain logic
-│   │    └── order_book_class.py  # OrderBook class and update methods
+│   │    │── order_book_class.py  # OrderBook class and update methods
+│   │    └── order_book_production.py  # Creates and saves a local copy of the order book ready for validation  
 │   │
 │   └── utils/                    # Reusable helpers
 │      ├── logger.py              # logging setup
