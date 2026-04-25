@@ -72,5 +72,5 @@ async def run_the_subscriber(websocket):
     response = await _send_subscription_request(websocket)
     while not await _is_subscription_confirmed(response):
         await asyncio.sleep(0.1)
-        response = await _send_subscription_request(websocket)
+        response = await websocket.recv()
     print ('Subscription is confirmed')  
