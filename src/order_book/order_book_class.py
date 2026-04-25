@@ -1,6 +1,7 @@
 import bisect
 import logging
 from collections import namedtuple
+from typing import Self
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,12 @@ class OrderBook:
     
 
     async def update_order_book(self, message: dict) -> tuple[dict, dict]:
-        for side_key in ['b', 'a']:
-            await self.update_order_book_side (message, side_key)
+        try:
+            self.content["lastUpdatedId"] = message ['u']
+            for side_key in ['b', 'a']:
+                await self.update_order_book_side (message, side_key)
+        except KeyError as e:
+            logger.warning(f'Bad message received, skipping: {e}')      
         return self.ob_bids, self.ob_asks
     
 
@@ -69,6 +74,11 @@ class OrderBook:
         self.content['asks'] = self.content['asks'][0:num_records]
     
 
+    async def prepare_local_copy_for_validation (self) -> Self:
+        await self.sort_updated_order_book()
+        await self.trim_order_book()
+        return self
+   
     # Maintaining price list - not strictly required for order book
     # Going to use at the later stages of the project    
 
