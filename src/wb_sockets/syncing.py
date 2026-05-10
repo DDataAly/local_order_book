@@ -59,6 +59,8 @@ async def get_order_book() -> tuple [dict, int]:
 
 async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
     """
+    Validates that the snapshot is not stale by checking it overlaps with the stream.
+
     Continuously requests a copy of the order book from the Binance REST API and compares
     its "lastUpdateId" with the 'U' value (first update ID) from the earliest valid
     depth update message in the WebSocket buffer.
@@ -84,6 +86,8 @@ async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
 
 async def find_matching_message(order_book_last_update_id, buffer) -> None:
     """
+    Finds the first message that contains updates not yet reflected in the snapshot.
+
     Continuously checks the buffer for the earliest depth update message with the 'u' value 
     (last update ID) greater than the 'lastUpdateId' value from the order book snapshot.
     Once found, returns this message.
