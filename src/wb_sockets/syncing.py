@@ -45,11 +45,11 @@ async def get_order_book() -> tuple [dict, int]:
             async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
                 response.raise_for_status()
                 snapshot = await response.json()
-        except aiohttp.ClientError as e:
-            print (f'Error fetching the order book snapshot: {e}') 
-            raise
         except aiohttp.ContentTypeError as e:
             print(f'The server response file is not a valid json: {e}') 
+            raise
+        except aiohttp.ClientError as e:
+            print (f'Error fetching the order book snapshot: {e}') 
             raise
         except Exception as e:
             print(f'An error occurred fetching the order book copy: {e}')
