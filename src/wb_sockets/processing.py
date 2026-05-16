@@ -79,11 +79,15 @@ async def ws_processing(order_book, buffer):
             
             await asyncio.sleep(0.1)
 
+        except MissingMessageInIngestedStream:
+            raise    
+
         except Exception as e:
             buffer.appendleft(curr_msg)
             await asyncio.sleep(0.1)
             print(f"Something is wrong with processing: {e}")
             raise
+
 
 
             #  pass
