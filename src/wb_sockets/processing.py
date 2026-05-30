@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections import deque
 
 
 class MissingMessageInIngestedStream(Exception):
@@ -27,15 +28,14 @@ async def to_do_processing_logic(order_book, message):
     print("Processing is done")
 
 
-async def is_continuous(curr_msg, buffer, max_num_skipped_msg = 2):
+async def is_continuous(curr_msg, buffer:deque) -> bool:
     target_id = int(curr_msg["u"]) + 1
-    shelf = []
 
-    while len(shelf) <= max_num_skipped_msg:
-        # If buffer is empty, wait for a new message being added by ws_ingestion
-        while len(buffer) < 1:
-            await asyncio.sleep(0.1)
+    # If buffer is empty, wait for a new message being added by ws_ingestion
+    while len(buffer) < 1:
+        await asyncio.sleep(0.1)
 
+    try:
         next_msg_first_id = int(json.loads(buffer[0])["U"])
         print(f"Last update current {curr_msg['u']}, first update next {next_msg_first_id}")
 
@@ -43,13 +43,10 @@ async def is_continuous(curr_msg, buffer, max_num_skipped_msg = 2):
         if next_msg_first_id == target_id:
             print("Condition is met")
             return True
+    except Exception as e:
+        print(f"Message in the buffer can not be processed: {e}")
 
-        # If there is a gap between msgs, we pop the problematic msg and put it on the shelf
-        skipped_msg = buffer.popleft()
-        shelf.append(skipped_msg)
-        print(f"Skipped a message. Shelf size: {len(shelf)}")
-
-    print(f"Condition is not met after skipping {max_num_skipped_msg} messages")
+    print(f"Condition is not met")
     return False
 
 
