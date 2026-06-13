@@ -57,6 +57,18 @@ async def get_order_book() -> tuple [dict, int]:
     return snapshot, snapshot.get("lastUpdateId")
 
 
+async def validate_snapshot(snapshot: dict) -> bool:
+    try:
+        assert all ('lastUpadateId', 'bids', 'asks') in list(snapshot.keys()), 'Required key(s) are missing'
+        assert len(snapshot.asks) != 0, 'Asks are empty'
+        assert type(snapshot.asks) ==list, 'Wrong format of asks records'
+        assert all(type(snapshot.asks[0][0]) == str, type(snapshot.asks[0][1]) == str,''), 'Price or quantity is not valid'
+        assert all (type(float(snapshot.asks[0])) == float, type(float(snapshot.asks[1])) == float), 'Price or quantity can not be parsed correctly'  
+    except Exception:
+        return False
+    return True
+
+
 async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
     """
     Validates that the snapshot is not stale by checking it overlaps with the stream.
@@ -122,4 +134,15 @@ async def find_matching_message(order_book_last_update_id, buffer) -> None:
             else:
                 buffer.popleft()
         print('No matching message found in the buffer yet.')
+
+def validate_snapshot(snapshot: dict) -> bool:
+    try:
+        assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
+        assert all([float(snapshot[side][0][0]) for side in['bids', 'asks']])
+        assert all([float(snapshot[side][0][1]) for side in['bids', 'asks']])
+    except Exception as e:
+        print("Invalid snapshot received, retrying")
+        return False
+    return True
+
 
