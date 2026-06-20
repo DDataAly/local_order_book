@@ -1,6 +1,7 @@
 import asyncio
+import time
 import websockets
-from order_book.orchestrator import orchestrator
+from order_book.initialise_order_book_stream import initialise_order_book_stream
 from wb_sockets import run_the_subscriber
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
@@ -16,32 +17,41 @@ async def run_code():
                 print('Can\'t subscribe to the requested channel')
                 return
             
-            ws_ingestion_task, ws_processing_task, order_book = await orchestrator(websocket)
-                        
-            try: 
-                tasks =[ws_ingestion_task, ws_processing_task]
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout = 1)
+            try:
+                ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket)
+            except Exception:
+                print('Error at the initialisation stage')
+                raise
+                    
+             
+            tasks =[ws_ingestion_task, ws_processing_task]
+            await asyncio.gather(*tasks)
 
-            except asyncio.TimeoutError:
-                print('Run time has ended')
-                for task in tasks:
-                    task.cancel()
-                #Wait for tasks completion - in this case TimeOut error
-                await asyncio.gather(ws_ingestion_task, ws_processing_task, return_exceptions=True)
-            
-            print('All done')
-
-    except Exception as e:
-        print(f"Something went wrong: {e}")
     finally:
+        if ws_ingestion_task:
+            ws_ingestion_task.cancel()
+            await asyncio.gather(ws_ingestion_task, return_exceptions=True)
+        
+        if ws_processing_task:
+            ws_processing_task.cancel()
+            await asyncio.gather(ws_processing_task, return_exceptions=True)
+
         print("WebSocket connection closed")
         
+
+async def run_for_duration(runtime):
+    start_time = time.monotonic()
+    while time.monotonic() < start_time + runtime:
+        time_till_timeout = runtime - (time.monotonic() - start_time)
+        try:
+            await asyncio.wait_for(run_code(), timeout = time_till_timeout)
+        except Exception as e:
+            print(f'Restarting due to error: {e}')
+            continue
+
 asyncio.run(run_code()) #Creates the event loop and runs coroutines  
 
-
-
-
-
+                       
 
 
 # project_directory = os.path.dirname(os.path.abspath('__main__'))
@@ -127,3 +137,20 @@ asyncio.run(run_code()) #Creates the event loop and runs coroutines
 #                 buffer.popleft()
 #         print('No matching message found in the buffer yet.')
  
+
+def this_always_fails():
+      print('Hello from cats')
+      raise Exception
+
+max_sync_retry = 3
+
+for _ in range (max_sync_retry):
+        try:
+            ws_ingestion_task = this_always_fails()
+            break
+        except Exception as e:
+            print(f'round {_}')
+            continue
+else:
+    print('Error at the order book stream initiation')
+    raise ('Stop trying. Ask cats')
