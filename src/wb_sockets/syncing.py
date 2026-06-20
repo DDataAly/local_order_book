@@ -27,18 +27,13 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
             print(f'Skipping non-depthUpdate message: {parsed}')
         await asyncio.sleep(0.01)
 
-async def get_order_book() -> tuple [dict, int]:
+async def get_order_book() -> dict:
     """
     Sends a request to get a copy of the order book from Binance REST API using aiohttp.ClientSession()
     to avoid blocking the event loop. This allows ws_ingestion to run simultaneously with this function.
     Saves the received JSON locally at the path specified by 'path_initial_shapshot'.
-    Extracts and returns the 'lastUpdateId' of the saved order book copy.
-    This ID is used to synchronize the order book with the WebSocket depth stream.
-
     Returns:
-        tuple:
             snapshot (dict): parsed JSON order book snapshot from Binance REST API
-            order_book_last_update_id (int): the last update ID from the REST API snapshot of the order book
     """
     async with aiohttp.ClientSession() as session:
         try:
@@ -54,24 +49,24 @@ async def get_order_book() -> tuple [dict, int]:
         except Exception as e:
             print(f'An error occurred fetching the order book copy: {e}')
             raise
-    return snapshot, snapshot.get("lastUpdateId")
+    return snapshot
 
-
-async def validate_snapshot(snapshot: dict) -> bool:
+def validate_snapshot(snapshot: dict) -> bool:
     try:
-        assert all ('lastUpadateId', 'bids', 'asks') in list(snapshot.keys()), 'Required key(s) are missing'
-        assert len(snapshot.asks) != 0, 'Asks are empty'
-        assert type(snapshot.asks) ==list, 'Wrong format of asks records'
-        assert all(type(snapshot.asks[0][0]) == str, type(snapshot.asks[0][1]) == str,''), 'Price or quantity is not valid'
-        assert all (type(float(snapshot.asks[0])) == float, type(float(snapshot.asks[1])) == float), 'Price or quantity can not be parsed correctly'  
-    except Exception:
+        assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
+        assert all([float(snapshot[side][0][0]) for side in['bids', 'asks']])
+        assert all([float(snapshot[side][0][1]) for side in['bids', 'asks']])
+    except Exception as e:
+        print("Invalid snapshot received, retrying")
         return False
     return True
 
 
-async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
+
+
+async def fetch_order_book_snapshot(buffer) -> dict:
     """
-    Validates that the snapshot is not stale by checking it overlaps with the stream.
+    Validates that the snapshot is of expected format and not stale by checking it overlaps with the stream.
 
     Continuously requests a copy of the order book from the Binance REST API and compares
     its "lastUpdateId" with the 'U' value (first update ID) from the earliest valid
@@ -84,16 +79,17 @@ async def fetch_order_book_snapshot(buffer) -> tuple [dict, int]:
     Returns:
         tuple:
             snapshot (dict): parsed JSON order book snapshot from Binance REST API
-            order_book_last_update_id (int): the "lastUpdateId" of that snapshot
     """
     while True:
         await asyncio.sleep (0.1)
-        snapshot, order_book_last_update_id = await get_order_book()  
-        first_received_message_id = await get_first_depth_update_id(buffer)
+        snapshot = await get_order_book()
+        if validate_snapshot(snapshot): 
+            order_book_last_update_id = snapshot["lastUpdateId"]
+            first_received_message_id = await get_first_depth_update_id(buffer)
+            if order_book_last_update_id >= first_received_message_id:
+                print(f'A valid snapshot of the order book is found')
+                return snapshot
 
-        if order_book_last_update_id >= first_received_message_id:
-            print(f'A valid snapshot of the order book is found')
-            return snapshot, order_book_last_update_id  
 
 
 async def find_matching_message(order_book_last_update_id, buffer) -> None:
@@ -134,15 +130,5 @@ async def find_matching_message(order_book_last_update_id, buffer) -> None:
             else:
                 buffer.popleft()
         print('No matching message found in the buffer yet.')
-
-def validate_snapshot(snapshot: dict) -> bool:
-    try:
-        assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
-        assert all([float(snapshot[side][0][0]) for side in['bids', 'asks']])
-        assert all([float(snapshot[side][0][1]) for side in['bids', 'asks']])
-    except Exception as e:
-        print("Invalid snapshot received, retrying")
-        return False
-    return True
 
 
