@@ -6,12 +6,6 @@ from order_book.order_book_production import create_order_book
 
 async def initialise_order_book_stream(websocket):
     buffer = deque([])
-    # Initilise tasks as None for the case when the error is raised before they're defined
-    # This is useful as it allows to cancel them neatly at the finally block of run_code()
-    # irrespectively of the point where error occurs
-    ws_ingestion_task = None
-    ws_processing_task = None
-    
     ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
 
     try:
