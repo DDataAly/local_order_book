@@ -3,7 +3,7 @@ import pytest_asyncio
 import json
 import asyncio
 from collections import deque
-from src.wb_sockets.processing import is_continuous, ws_processing
+from src.wb_sockets.processing import is_continuous, ws_processing, MissingMessageInIngestedStream
 from src.order_book.order_book_class import OrderBook
 
 @pytest.fixture()
@@ -34,10 +34,10 @@ async def order_book():
 
 @pytest_asyncio.fixture
 async def setup_buffer (curr_msg):
-     def _make_buffer(num_faulty_msg):
+     def _make_buffer(num_faulty_msgs):
         buffer_list = [curr_msg]
         
-        for i in range (num_faulty_msg):
+        for i in range (num_faulty_msgs):
                 faulty_msg = {"e":"depthUpdate",
                 "E":1753786825814,
                 "s":"BTCUSDT",
@@ -90,7 +90,7 @@ class TestIsContinuous:
         assert await is_continuous(curr_msg, buffer) 
 
     @pytest.mark.asyncio    
-    async def test_returns_true_for_buffer_with_one_invalid_msg(self, curr_msg):
+    async def test_returns_false_for_buffer_with_invalid_msg(self, curr_msg):
         next_msg = {
             "e": "depthUpdate",
             "E": 1753786825814,
@@ -100,82 +100,28 @@ class TestIsContinuous:
             "b": [["114300.00000000", "0.73150000"]],
             "a": [["108304.00000000", "2.77750000"]]
         }
-        following_msg = {
-            "e": "depthUpdate",
-            "E": 1753786825814,
-            "s": "BTCUSDT",
-            "U": 73652024513,
-            "u": 73652024517,
-            "b": [["114300.00000000", "0.73150000"]],
-            "a": [["108304.00000000", "2.77750000"]]
-        }
-        buffer = deque([json.dumps(next_msg), json.dumps(following_msg)])
-        assert await is_continuous(curr_msg, buffer)
+        buffer = deque([json.dumps(next_msg)])
+        assert not await is_continuous(curr_msg, buffer)
 
     @pytest.mark.asyncio    
-    async def test_returns_true_for_buffer_with_two_invalid_msgs(self,curr_msg):
+    async def test_returns_false_for_buffer_with_faulty_message(self,curr_msg, capsys):
         next_msg = {"e":"depthUpdate",
                 "E":1753786825814,
                 "s":"BTCUSDT",
-                "U":53652024513,
-                "u":53652024517,
+                "U": 'non digit',
+                "u": 53652024517,
                 "b":[["114300.00000000", "0.73150000"]],
                 "a":[["108304.00000000","2.77750000"]]}
         
-        following_msg_invalid = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":63652024513,
-                "u":63652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        
-        following_msg_valid = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":73652024513,
-                "u":73652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        buffer = deque([json.dumps(next_msg), json.dumps(following_msg_invalid), json.dumps(following_msg_valid)])
-        print(buffer)
-
-        assert await is_continuous (curr_msg, buffer)    
-
-    @pytest.mark.asyncio    
-    async def test_returns_false_for_buffer_with_three_invalid_msgs(self,curr_msg):
-        next_msg = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":53652024513,
-                "u":53652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        
-        following_msg_invalid_1 = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":63652024513,
-                "u":63652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        
-        following_msg_invalid_2 = {"e":"depthUpdate",
-                "E":1753786825814,
-                "s":"BTCUSDT",
-                "U":64652024513,
-                "u":64652024517,
-                "b":[["114300.00000000", "0.73150000"]],
-                "a":[["108304.00000000","2.77750000"]]}
-        buffer = deque([json.dumps(next_msg), json.dumps(following_msg_invalid_1), json.dumps(following_msg_invalid_2)])
-        print(buffer)
-
-        assert not await is_continuous (curr_msg, buffer) 
+        buffer = deque([json.dumps(next_msg)])
+        # with pytest.raises (Exception) as e:
+        assert not await is_continuous(curr_msg, buffer)
+        assert 'can not be processed' in capsys.readouterr().out
 
 @pytest.mark.describe('Tests to ensure ws_processing runs correctly with various buffer content')
 class TestWsProcessing:
         @pytest.mark.asyncio
-        async def test_updates_order_book_continuous_buffer_new_bids_asks(self,curr_msg, order_book):
+        async def test_updates_order_book_msg_with_new_bids_asks(self,curr_msg, order_book):
                 # Creates a buffer from individual WebSockets messages
                 next_msg = {"e":"depthUpdate",
                         "E":1753786825814,
@@ -201,7 +147,7 @@ class TestWsProcessing:
 
 
         @pytest.mark.asyncio
-        async def test_updates_order_book_continuous_buffer_update_or_delete_bids_asks(self, order_book):
+        async def test_updates_order_book_msg_to_update_or_delete_bids_asks(self, order_book):
                 curr_msg = {"e":"depthUpdate",
                         "E":1753786825814,
                         "s":"BTCUSDT",
@@ -225,41 +171,41 @@ class TestWsProcessing:
                 assert order_book.ob_bids == {113678.85: 2.0, 113678.84: 0.7736}
                 assert order_book.ob_asks =={113678.86 : 1.93563}
 
-  
+      
+        @pytest.mark.it('correctly handles one, two and more of faulty messages in the buffer')
+        @pytest.mark.parametrize('num_faulty_msgs, should_raise_MissingMessageInIngestedStream',
+                                 [
+                                       (0, False),
+                                       (1, True),
+                                       (2, True),
+                                       (4, True)
+                                 ],
+                                 ids = ['no faulty messages in the buffer',
+                                        'one faulty message in the buffer',
+                                        'two consequent faulty messages in the buffer',
+                                        'more than 2 consequent faulty messages in the buffer']
+                                )
         @pytest.mark.asyncio
-        async def test_updates_order_book_skipping_one_faulty_msg(self, curr_msg, order_book): 
-                next_msg_faulty = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":53652024513,
-                        "u":53652024517,
-                        "b":[["114300.00000000", "0.73150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
-        
-                following_msg = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":73652024513,
-                        "u":73652024517,
-                        "b":[["114300.00000000", "0.73150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
+        async def test_processes_buffer_with_faulty_messages(self, order_book, setup_buffer, num_faulty_msgs, should_raise_MissingMessageInIngestedStream):
+                # HOF - pytest handles buffer = setup_buffer(curr_msg) behind the scene
+                # So here we call setup_buffer(num_faulty_msgs) and this setup_buffer is build by pytest with curr_msg already
+                buffer = setup_buffer(num_faulty_msgs) 
                 
-                after_following_msg = {"e":"depthUpdate",
-                        "E":1753786825814,
-                        "s":"BTCUSDT",
-                        "U":73652024518,
-                        "u":73652024522,
-                        "b":[["114300.00000000", "0.00150000"]],
-                        "a":[["108304.00000000","2.77750000"]]}
-                
-                buffer = deque([json.dumps(curr_msg), json.dumps(next_msg_faulty), json.dumps(following_msg), json.dumps(after_following_msg)])
-                 
-                task = asyncio.create_task(ws_processing(order_book, buffer)) 
-                await asyncio.sleep(0.5)               
+                if should_raise_MissingMessageInIngestedStream:
+                    with pytest.raises (MissingMessageInIngestedStream) as e:
+                        await ws_processing(order_book, buffer)
+                    assert "The message stream is not continuous. Launching re-sync" in str(e.value)
 
-                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
-                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
+                else:
+                        task = asyncio.create_task(ws_processing(order_book, buffer)) 
+                        await asyncio.sleep(0.5)     
+                        try:
+                                assert order_book.ob_bids == {113678.85: 7.2533, 113678.84: 0.7736, 118300.0:1.73150000, 114300:0.7315}
+                                assert order_book.ob_asks =={113678.86 : 1.93563, 113900.35 : 0.13677, 118304.0:1.77750000, 108304.0:2.7775}
                 
-                task.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                        await task       
+                        finally:
+                                task.cancel()
+                                with pytest.raises(asyncio.CancelledError):
+                                        await task  
+
+

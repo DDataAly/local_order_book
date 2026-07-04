@@ -78,14 +78,17 @@ local_order_book/
 │   │   └── processing.py         # ws_processing logic (apply updates to OrderBook)
 │   │
 │   ├── order_book/               # Order book domain logic
-│   │    └── order_book_class.py  # OrderBook class and update methods
+│   │    │── order_book_class.py  # OrderBook class and update methods
+│   │    └── order_book_production.py  # Creates and saves a local copy of the order book ready for validation  
 │   │
 │   └── utils/                    # Reusable helpers
 │      ├── logger.py              # logging setup
 │      └── helpers.py             # miscellaneous utilities (path finder at this stage)
 │
 ├── tests/                        # Unit tests
-│    └── test_order_book.py       # core processing logic test
+│    ├── test_order_book_class.py # core processing logic tests
+│    ├── test_processing.py       # tests around handling invalid messages in the buffer
+│    └── test_syncing.py          # API call mocking test - getting a copy of the order book
 │
 ├── .gitignore
 ├── requirements.txt
