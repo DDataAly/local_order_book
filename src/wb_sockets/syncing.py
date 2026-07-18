@@ -37,7 +37,7 @@ async def get_order_book() -> dict:
     """
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=20') as response:
+            async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=10') as response:
                 response.raise_for_status()
                 snapshot = await response.json()
         except aiohttp.ContentTypeError as e:
@@ -82,13 +82,17 @@ async def fetch_order_book_snapshot(buffer) -> dict:
     """
     while True:
         await asyncio.sleep (0.1)
-        snapshot = await get_order_book()
-        if validate_snapshot(snapshot): 
-            order_book_last_update_id = snapshot["lastUpdateId"]
-            first_received_message_id = await get_first_depth_update_id(buffer)
-            if order_book_last_update_id >= first_received_message_id:
-                print(f'A valid snapshot of the order book is found')
-                return snapshot
+        try:
+            snapshot = await get_order_book()
+            if validate_snapshot(snapshot): 
+                order_book_last_update_id = snapshot["lastUpdateId"]
+                first_received_message_id = await get_first_depth_update_id(buffer)
+                if order_book_last_update_id >= first_received_message_id:
+                    print(f'A valid snapshot of the order book is found')
+                    return snapshot   
+        except Exception:
+            continue    
+
 
 
 
