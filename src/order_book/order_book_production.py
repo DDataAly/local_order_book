@@ -36,25 +36,3 @@ def save_snapshot(snapshot: dict) -> None:
         json.dump(snapshot, file)
     print('Initial snapshot of the order book is saved locally')
 
-
-
-
-# async def save_local_copy_ready_for_validation(order_book):
-#     await order_book.prepare_local_copy_for_validation(order_book)
-
-# def inner_layer():
-#     raise ValueError
-
-# def mid_layer():
-#     print('cats')
-#     inner_layer()
-
-# def outer_layer():
-#     print ("Fabulous")
-#     try:
-#         mid_layer()
-#     except Exception as e:
-#         print('Here we are!')
-#         raise e
-
-# outer_layer()

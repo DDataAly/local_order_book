@@ -46,6 +46,7 @@ async def run_code(subscription_timeout):
             await asyncio.gather(ws_processing_task, return_exceptions=True)
 
         print("WebSocket connection closed")
+
         
 
 async def run_for_duration(runtime, subscription_timeout = 5):
@@ -63,24 +64,25 @@ async def run_for_duration(runtime, subscription_timeout = 5):
 
 
 if __name__ == '__main__':
-    asyncio.run(run_code()) #Creates the event loop and runs coroutines  
+    asyncio.run(run_for_duration(2))
 
 
 # Sandbox code 
 
-def this_always_fails():
-      print('Hello from cats')
-      raise Exception
+# def this_always_fails():
+#       print('Hello from cats')
+#       raise Exception
 
-max_sync_retry = 3
+# max_sync_retry = 3
 
-for _ in range (max_sync_retry):
-        try:
-            ws_ingestion_task = this_always_fails()
-            break
-        except Exception as e:
-            print(f'round {_}')
-            continue
-else:
-    print('Error at the order book stream initiation')
-    raise ('Stop trying. Ask cats')
+# for _ in range (max_sync_retry):
+#         try:
+#             ws_ingestion_task = this_always_fails()
+#             break
+#         except Exception as e:
+#             print(f'round {_}')
+#             continue
+# else:
+#     print('Error at the order book stream initiation')
+#     raise ('Stop trying. Ask cats')
+
