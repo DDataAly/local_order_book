@@ -26,8 +26,11 @@ async def run_code(subscription_timeout):
                 print('Error at the subscription stage')
                 raise
             
+            match_found = asyncio.Event()
+            snapshot_timestamp = [None]
+
             try:
-                ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket)
+                order_book, ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket, match_found, snapshot_timestamp)
             except Exception:
                 print('Error at the initialisation stage')
                 raise
@@ -37,6 +40,11 @@ async def run_code(subscription_timeout):
             await asyncio.gather(*tasks)
 
     finally:
+        if not ws_ingestion_task.done() and not ws_processing_task.done():
+            # trigger verification with await asyncio.wait_for(run_verification())
+            # run_verification() should probably take order_book as an argument as otherwise it won't have access to it's properties
+            pass
+
         if ws_ingestion_task:
             ws_ingestion_task.cancel()
             await asyncio.gather(ws_ingestion_task, return_exceptions=True)
