@@ -50,7 +50,7 @@ async def is_continuous(curr_msg, buffer:deque) -> bool:
     return False
 
 
-async def ws_processing(order_book, buffer):
+async def ws_processing(order_book, buffer, match_found: asyncio.Event, snapshot_timestamp: list):
     # Infinite processing function
     while True:
         if len(buffer) < 1:
@@ -74,6 +74,22 @@ async def ws_processing(order_book, buffer):
                     "The message stream is not continuous. Launching re-sync"
                 )
             
+            # if not snapshot_timestamp[0]==None:
+            #     msg_timestamp = curr_msg["u"]
+            #     if snapshot_timestamp[0] > msg_timestamp:
+            #         # don't get to run_verification(), keep processing messages from the buffer and compare with the same snapshot_timestamp[0]
+            #         pass
+            #     if snapshot_timestamp[0] == msg_timestamp:
+            #         match_found.set()
+            #         # ws_processing has done it's job, would break be appropriate? what does break do if a function is used inside running task?
+            #         break
+            #     else:
+            #         # tell rn_verification to start a new loop
+            #         pass
+
+
+
+
             await asyncio.sleep(0.1)
 
         except MissingMessageInIngestedStream:
@@ -84,3 +100,4 @@ async def ws_processing(order_book, buffer):
             await asyncio.sleep(0.1)
             print(f"Something is wrong with processing: {e}")
             raise
+
