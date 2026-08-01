@@ -4,7 +4,10 @@ from wb_sockets import ws_ingestion, fetch_order_book_snapshot, find_matching_me
 from order_book.order_book_production import create_order_book
 
 
-async def initialise_order_book_stream(websocket, match_found: asyncio.Event, snapshot_timestamp:list):
+async def initialise_order_book_stream(websocket, 
+                                       match_found: asyncio.Event, 
+                                       verification_snapshot_timestamp: list, 
+                                       stop_fetching_verification_snapshots: asyncio.Event):
     buffer = deque([])
     ws_ingestion_task = asyncio.create_task(ws_ingestion(websocket, buffer))
 
@@ -24,8 +27,7 @@ async def initialise_order_book_stream(websocket, match_found: asyncio.Event, sn
 
     order_book = await create_order_book(snapshot)
 
-    ws_processing_task = asyncio.create_task(ws_processing(order_book, buffer, match_found, snapshot_timestamp))
+    ws_processing_task = asyncio.create_task(ws_processing(order_book, buffer, match_found, verification_snapshot_timestamp,stop_fetching_verification_snapshots))
     
     return order_book, ws_ingestion_task, ws_processing_task
-
 
