@@ -49,8 +49,8 @@ async def is_continuous(curr_msg, buffer:deque) -> bool:
     print(f"Condition is not met")
     return False
 
-
-async def ws_processing(order_book, buffer, match_found: asyncio.Event, snapshot_timestamp: list):
+o
+async def ws_processing(order_book, buffer, match_found: asyncio.Event, stop_fetching_verification_snapshot: asyncio.Event, snapshot_timestamp: list):
     # Infinite processing function
     while True:
         if len(buffer) < 1:
@@ -73,22 +73,26 @@ async def ws_processing(order_book, buffer, match_found: asyncio.Event, snapshot
                 raise MissingMessageInIngestedStream(
                     "The message stream is not continuous. Launching re-sync"
                 )
-            
-            # if not snapshot_timestamp[0]==None:
-            #     msg_timestamp = curr_msg["u"]
-            #     if snapshot_timestamp[0] > msg_timestamp:
-            #         # don't get to run_verification(), keep processing messages from the buffer and compare with the same snapshot_timestamp[0]
-            #         pass
-            #     if snapshot_timestamp[0] == msg_timestamp:
-            #         match_found.set()
-            #         # ws_processing has done it's job, would break be appropriate? what does break do if a function is used inside running task?
-            #         break
-            #     else:
-            #         # tell rn_verification to start a new loop
-            #         pass
 
+            # Verification stage - this block runs when run_verification returns snapshot_timestamp
+            if not snapshot_timestamp[0]==None:
+                msg_timestamp = curr_msg["u"] 
 
-
+                if snapshot_timestamp[0] > msg_timestamp:
+                    # curr_msg timestamp is behind the snapshot_timestamp - the snapshot is potentially suitable, 
+                    # keep processing messages from the buffer and compare with the same snapshot_timestamp[0]
+                    stop_fetching_verification_snapshot.set()
+                    pass
+               
+                elif snapshot_timestamp[0] == msg_timestamp:
+                    # curr_msg timestamp equal snapshot_timestamp - local order book copy is in sync with the snaphshot
+                    # we can stop ws_processing and start verification
+                    match_found.set()
+                    break
+                else:
+                    # curr_msg timestamp is ahead snapshot_timestamp - we need to fetch a new snapshot
+                    snapshot_timestamp[0]=None
+                    stop_fetching_verification_snapshot.clear()
 
             await asyncio.sleep(0.1)
 
