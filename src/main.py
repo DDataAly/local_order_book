@@ -2,6 +2,7 @@ import asyncio
 import time
 import websockets
 from order_book.initialise_order_book_stream import initialise_order_book_stream
+from wb_sockets.verifying import run_verification
 from wb_sockets import run_the_subscriber
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
@@ -27,10 +28,11 @@ async def run_code(subscription_timeout):
                 raise
             
             match_found = asyncio.Event()
-            snapshot_timestamp = [None]
+            verification_snapshot_timestamp = [None]
+            stop_fetching_verification_snapshots = asyncio.Event()
 
             try:
-                order_book, ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket, match_found, snapshot_timestamp)
+                order_book, ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket, match_found, verification_snapshot_timestamp, stop_fetching_verification_snapshots)
             except Exception:
                 print('Error at the initialisation stage')
                 raise
@@ -41,17 +43,25 @@ async def run_code(subscription_timeout):
 
     finally:
         if not ws_ingestion_task.done() and not ws_processing_task.done():
-            # trigger verification with await asyncio.wait_for(run_verification())
-            # run_verification() should probably take order_book as an argument as otherwise it won't have access to it's properties
-            pass
+            try:
+                await asyncio.wait_for(run_verification(
+                        match_found,
+                        stop_fetching_verification_snapshots,
+                        verification_snapshot_timestamp,
+                        order_book.ob_bids,
+                        order_book.ob_asks), 
+                        timeout=10)
+            except asyncio.TimeoutError:
+                print('Verification has timed out without completion')
+
 
         if ws_ingestion_task:
-            ws_ingestion_task.cancel()
-            await asyncio.gather(ws_ingestion_task, return_exceptions=True)
-        
+                ws_ingestion_task.cancel()
+                await asyncio.gather(ws_ingestion_task, return_exceptions=True)
+            
         if ws_processing_task:
-            ws_processing_task.cancel()
-            await asyncio.gather(ws_processing_task, return_exceptions=True)
+                ws_processing_task.cancel()
+                await asyncio.gather(ws_processing_task, return_exceptions=True)
 
         print("WebSocket connection closed")
 
@@ -93,4 +103,3 @@ if __name__ == '__main__':
 # else:
 #     print('Error at the order book stream initiation')
 #     raise ('Stop trying. Ask cats')
-
