@@ -42,18 +42,23 @@ async def run_code(subscription_timeout):
             await asyncio.gather(*tasks)
 
     finally:
-        if not ws_ingestion_task.done() and not ws_processing_task.done():
+        if both_tasks_running(ws_ingestion_task, ws_processing_task):
             try:
-                await asyncio.wait_for(run_verification(
+                verification_passed=await asyncio.wait_for(run_verification(
                         match_found,
                         stop_fetching_verification_snapshots,
                         verification_snapshot_timestamp,
                         order_book.ob_bids,
                         order_book.ob_asks), 
                         timeout=10)
+                if verification_passed:
+                    print('Verification is successful')
+                else:
+                    print("Verification has failed")
             except asyncio.TimeoutError:
                 print('Verification has timed out without completion')
-
+            except Exception:
+                print('An error occurred at verification stage')
 
         if ws_ingestion_task:
                 ws_ingestion_task.cancel()
@@ -80,6 +85,12 @@ async def run_for_duration(runtime, subscription_timeout = 5):
             print(f'Restarting due to error: {e}')
             continue
 
+
+def both_tasks_running(ws_ingestion_task, ws_processing_task):
+    if ws_ingestion_task and ws_processing_task:
+        if not ws_processing_task.done() and not ws_ingestion_task.done():
+            return True
+    return False
 
 if __name__ == '__main__':
     asyncio.run(run_for_duration(2))
