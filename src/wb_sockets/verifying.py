@@ -6,6 +6,14 @@ import time
 def run_comparison (verification_snapshot: dict,
                     local_ob_bids: dict, 
                     local_ob_ask: dict) -> bool:
+    # - verification_order_book = create_order_book(verification_snapshot)
+    # - verification_order_book.ob_bids, verification_order_book.ob_asks = verification_order_book.extract_order_book_bids_asks
+
+    # - order_book.sort_updated_order_book # Need to modify as currently modifies ob.content not ob.bids
+    # - order_book.trim_order_book # Need to modify as currently modifies ob.content not ob.bids
+
+    # Use the fancy pattern to run the same for both sides as update_order_book_side
+    # Do actual comparison logic just like verification_order_book == order_book
     return True
 
 
@@ -52,7 +60,5 @@ async def run_verification(match_found: asyncio.Event,
 #         print('Verification was not completed due to timeout')
 #     except Exception as e:
 #         print(f'Something went wrong. Verification can not be run; {e}')
-
-
 
 
