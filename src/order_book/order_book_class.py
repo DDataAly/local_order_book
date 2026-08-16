@@ -7,12 +7,8 @@ logger = logging.getLogger(__name__)
 
 PriceChange = namedtuple('PriceChange', ['prices_to_add_or_update', 'prices_to_remove'])
 
-class EmptyOrderBookException(Exception):
-    """Raised when the order book snapshot has no asks or bids values"""   
-
 class OrderBook:
-    def __init__(self, content:dict = None):
-        self.content = content
+    def __init__(self, snapshot:dict = None):
         self.ob_bids: dict[float, float] = {} 
         self.ob_asks: dict[float, float] = {} 
         self.ob_bids_prices: list[float] = [] # always sorted ASC
@@ -20,20 +16,29 @@ class OrderBook:
         
     # Maintaining order book
 
-    async def extract_order_book_bids_asks (self) -> tuple[list[float], list[float]]:
-        try:
-            self.ob_bids = {float(price):float(qty) for price,qty in self.content['bids']}
-            self.ob_asks = {float(price):float(qty) for price,qty in self.content['asks']}
-            if len(self.ob_bids) == 0 or len(self.ob_asks) == 0:
-                logger.critical ('Order book snapshot doesn\'t contain bids or asks and can\'t be processed')
-                # Need to raise error as the execution of the code can't be continued
-                raise EmptyOrderBookException ("No bids or asks in the order book snapshot")
-        except (TypeError, KeyError, ValueError) as e:
-            # Need to raise error as the execution of the code can't be continued 
-            logger.critical (f'Order book snapshot is not valid and can\'t be processed: {e}')
-            raise 
+    # class EmptyOrderBookException(Exception):
+    #     """Raised when the order book snapshot has no asks or bids values"""   
+
+    # async def extract_order_book_bids_asks (self) -> tuple[list[float], list[float]]:
+    #     try:
+    #         self.ob_bids = {float(price):float(qty) for price,qty in self.content['bids']}
+    #         self.ob_asks = {float(price):float(qty) for price,qty in self.content['asks']}
+    #         if len(self.ob_bids) == 0 or len(self.ob_asks) == 0:
+    #             logger.critical ('Order book snapshot doesn\'t contain bids or asks and can\'t be processed')
+    #             # Need to raise error as the execution of the code can't be continued
+    #             raise EmptyOrderBookException ("No bids or asks in the order book snapshot")
+    #     except (TypeError, KeyError, ValueError) as e:
+    #         # Need to raise error as the execution of the code can't be continued 
+    #         logger.critical (f'Order book snapshot is not valid and can\'t be processed: {e}')
+    #         raise 
+    #     return (self.ob_bids, self.ob_asks)    
+
+
+    async def extract_order_book_bids_asks (self, snapshot: dict) -> tuple[list[float], list[float]]:
+        self.ob_bids = {float(price):float(qty) for price,qty in snapshot['bids']}
+        self.ob_asks = {float(price):float(qty) for price,qty in snapshot['asks']}
         return (self.ob_bids, self.ob_asks)    
-    
+
 
     async def update_order_book_side(self, message: dict, book_side: str) -> dict:
         side = self.ob_bids if book_side == 'b' else self.ob_asks
