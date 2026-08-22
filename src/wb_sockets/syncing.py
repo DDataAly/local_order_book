@@ -40,6 +40,7 @@ async def get_order_book() -> dict:
             async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=10') as response:
                 response.raise_for_status()
                 snapshot = await response.json()
+                print(type(snapshot))
         except aiohttp.ContentTypeError as e:
             print(f'The server response file is not a valid json: {e}') 
             raise
@@ -52,18 +53,16 @@ async def get_order_book() -> dict:
     return snapshot
 
 
-
 def validate_snapshot(snapshot: dict) -> bool:
     try:
         assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
         assert all(len(snapshot[key])!=0 for key in ['asks', 'bids'])
         assert isinstance(snapshot['lastUpdateId'], int) 
-        assert snapshot['lastUpdateId']!= 0
         
         for side in ['bids', 'asks']:
             for price,qty in snapshot[side]:
                 assert not(float(qty) == 0 or float(price) == 0)
-        print('All good!')
+
     except Exception as e:
         print("Invalid snapshot received, retrying")
         return False
