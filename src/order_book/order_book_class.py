@@ -40,9 +40,9 @@ class OrderBook:
     async def update_order_book(self, message: dict) -> tuple[dict, dict]:
         for side_key in ['b', 'a']:
             await self.update_order_book_side (message, side_key)
-            return self.ob_bids, self.ob_asks
+        return self.ob_bids, self.ob_asks
 
-    async def prepare_local_copy_for_validation(self, num_records: int =5000) -> tuple [dict, dict]:
+    async def prepare_local_copy_for_validation(self, num_records: int =5000) -> Self:
         ob_bids_list = sorted(self.ob_bids.items(),reverse=True)
         ob_asks_list = sorted(self.ob_asks.items())
         self.ob_bids = dict(ob_bids_list[:num_records])
