@@ -7,12 +7,12 @@ from src.order_book.order_book_class import OrderBook
 @pytest.fixture
 def small_order_book_snapshot() -> dict:
     return {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"]
-                            ], 
-                        "asks": [["113678.86000000", "1.93563000"], 
-                                ["113900.35000000", "0.13677000"]
-                                ]
+            "bids": [["113678.85000000", "7.25330000"], 
+                    ["113678.84000000", "0.77360000"]
+                ], 
+            "asks": [["113678.86000000", "1.93563000"], 
+                    ["113900.35000000", "0.13677000"]
+                    ]
             }
 
 @pytest_asyncio.fixture
@@ -22,27 +22,31 @@ async def small_order_book(small_order_book_snapshot):
     return small_order_book
 
 @pytest.fixture
-def big_order_book():
-    content = {"lastUpdateId": 74105025813, 
-                        "bids": [["113678.85000000", "7.25330000"], 
-                                ["113678.84000000", "0.77360000"], 
-                                ["113677.94000000", "0.00005000"], 
-                                ["113676.92000000", "0.00010000"], 
-                                ["113675.73000000", "0.00007000"], 
-                                ["113674.77000000", "0.07648000"], 
-                                ["113674.27000000", "0.00007000"]
-                            ], 
-                        "asks": [["113678.86000000", "1.93563000"], 
-                                ["113679.35000000", "0.03677000"], 
-                                ["113681.32000000", "0.00005000"], 
-                                ["113682.30000000", "0.00005000"], 
-                                ["113683.82000000", "0.00005000"], 
-                                ["113684.00000000", "0.00080000"], 
-                                ["113685.38000000", "0.00200000"]
-                                ]
-                            }
-    order_book = OrderBook()
-    return order_book
+def big_order_book_snapshot() -> dict:
+    return {"lastUpdateId": 74105025813, 
+            "bids": [["113678.85000000", "7.25330000"], 
+                    ["113678.84000000", "0.77360000"], 
+                    ["113677.94000000", "0.00005000"], 
+                    ["113676.92000000", "0.00010000"], 
+                    ["113675.73000000", "0.00007000"], 
+                    ["113674.77000000", "0.07648000"], 
+                    ["113674.27000000", "0.00007000"]
+                ], 
+            "asks": [["113678.86000000", "1.93563000"], 
+                    ["113679.35000000", "0.03677000"], 
+                    ["113681.32000000", "0.00005000"], 
+                    ["113682.30000000", "0.00005000"], 
+                    ["113683.82000000", "0.00005000"], 
+                    ["113684.00000000", "0.00080000"], 
+                    ["113685.38000000", "0.00200000"]
+                    ]
+                }
+
+@pytest_asyncio.fixture
+async def big_order_book(big_order_book_snapshot):
+    big_order_book=OrderBook()
+    await big_order_book.extract_order_book_bids_asks(big_order_book_snapshot)
+    return big_order_book
 
 @pytest.fixture
 def short_message():
@@ -176,131 +180,179 @@ class TestUpdateOrderBookSide:
         assert expected_log in caplog.text 
 
 
-#     @pytest.mark.it('correctly processes individual updates')
-#     # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
-#     @pytest.mark.parametrize('index, side_value, expected_output',
-#                              [
-#                                 ('b', [["113678.84000000", "0.00000000"]], {113678.85000000: 7.25330000}),
-#                                 ('b', [["113680.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
-#                                  {113678.85000000: 7.25330000, 113678.84000000 : 0.77360000}),
-#                                 ('b', [["113678.85000000", "2.00000000"]], {113678.85000000: 2.00000000, 113678.84000000: 0.77360000}),
-#                                 ('b', [["113680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
-#                                     {113678.85000000: 7.25330000, 
-#                                     113678.84000000 : 0.77360000,
-#                                     113680.84000000 : 4.00000000,
-#                                     113300.84000000 : 0.50000000}),
-#                                 ('a', [["113678.86000000", "0.00000000"]], {113900.35000000 : 0.13677000}),
-#                                 ('a', [["113900.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
-#                                  {113678.86000000 : 1.93563000, 113900.35000000 : 0.13677000}), 
-#                                 ('a', [["113678.86000000", "2.00000000"]], {113678.86000000: 2.00000000, 113900.35000000 : 0.13677000}),
-#                                 ('a', [["114680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
-#                                     {113678.86000000 : 1.93563000, 
-#                                     113900.35000000 : 0.13677000,
-#                                     114680.84000000 : 4.00000000,
-#                                     113300.84000000 : 0.50000000})  
-#                              ],
-#                              ids = [
-#                              'removes bid from order book - qty for bid in the message is zero',
-#                              'ignores bids with zero qty in the message if they\'re not in the order book',    
-#                              'updates bid qty in the order book with its qty from the message',
-#                              'adds new bids in the order book from the message',
-#                              'removes ask from order book - qty for ask in the message is zero',
-#                              'ignores asks with zero qty in the message if they\'re not in the order book',
-#                              'updates ask qty in the order book with its qty from the message',
-#                              'adds new asks in the order book from the message']   
-#                             )
-#     @pytest.mark.asyncio
-#     async def test_updates(self, short_message, small_order_book, index, side_value, expected_output):
-#         short_message [index] = side_value
-#         await small_order_book.extract_order_book_bids_asks()
-#         result = await small_order_book.update_order_book_side (short_message, book_side = index)
-#         assert result == expected_output
+    @pytest.mark.it('correctly processes individual updates')
+    # Bids with prices higher than order book max are possible e.g. if the bid was placed and closed immediately
+    @pytest.mark.parametrize('index, side_value, expected_output',
+                             [
+                                ('b', [["113678.84000000", "0.00000000"]], {113678.85000000: 7.25330000}),
+                                ('b', [["113680.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
+                                 {113678.85000000: 7.25330000, 113678.84000000 : 0.77360000}),
+                                ('b', [["113678.85000000", "2.00000000"]], {113678.85000000: 2.00000000, 113678.84000000: 0.77360000}),
+                                ('b', [["113680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
+                                    {113678.85000000: 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    113680.84000000 : 4.00000000,
+                                    113300.84000000 : 0.50000000}),
+                                ('a', [["113678.86000000", "0.00000000"]], {113900.35000000 : 0.13677000}),
+                                ('a', [["113900.84000000", "0.00000000"],["113300.84000000", "0.00000000"]], 
+                                 {113678.86000000 : 1.93563000, 113900.35000000 : 0.13677000}), 
+                                ('a', [["113678.86000000", "2.00000000"]], {113678.86000000: 2.00000000, 113900.35000000 : 0.13677000}),
+                                ('a', [["114680.84000000", "4.00000000"],["113300.84000000", "0.50000000"]], 
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    114680.84000000 : 4.00000000,
+                                    113300.84000000 : 0.50000000})  
+                             ],
+                             ids = [
+                             'removes bid from order book - qty for bid in the message is zero',
+                             'ignores bids with zero qty in the message if they\'re not in the order book',    
+                             'updates bid qty in the order book with its qty from the message',
+                             'adds new bids in the order book from the message',
+                             'removes ask from order book - qty for ask in the message is zero',
+                             'ignores asks with zero qty in the message if they\'re not in the order book',
+                             'updates ask qty in the order book with its qty from the message',
+                             'adds new asks in the order book from the message']   
+                            )
+    @pytest.mark.asyncio
+    async def test_updates(self, short_message, small_order_book, index, side_value, expected_output):
+        short_message [index] = side_value
+        result = await small_order_book.update_order_book_side (short_message, book_side = index)
+        assert result == expected_output
 
+     
+    @pytest.mark.it('processes messages with different types of updates correctly')
+    @pytest.mark.asyncio
+    async def test_processes_multiple_updates(self, big_order_book, long_message):
+        result = await big_order_book.update_order_book_side (long_message, book_side ='b')
+        assert result == {113678.85000000 : 7.25330000, 
+                        113678.84000000 : 0.77360000, 
+                        113677.94000000 : 0.00005000,
+                        113676.92000000 : 1.00000000, 
+                        113675.73000000 : 0.00007000,
+                        113674.27000000 : 0.00007000,
+                        113688.21000000 : 0.40000000,
+                        113670.84000000 : 0.10000000}
         
-#     @pytest.mark.it('processes messages with different types of updates correctly')
-#     @pytest.mark.asyncio
-#     async def test_processes_multiple_updates(self, big_order_book, long_message):
-#         await big_order_book.extract_order_book_bids_asks()
-#         result = await big_order_book.update_order_book_side (long_message, book_side ='b')
-#         assert result == {113678.85000000 : 7.25330000, 
-#                         113678.84000000 : 0.77360000, 
-#                         113677.94000000 : 0.00005000,
-#                         113676.92000000 : 1.00000000, 
-#                         113675.73000000 : 0.00007000,
-#                         113674.27000000 : 0.00007000,
-#                         113688.21000000 : 0.40000000,
-#                         113670.84000000 : 0.10000000}
-        
-# class TestUpdateOrderBook:
+class TestUpdateOrderBook:
 
-#     @pytest.mark.it('returns a tuple of dictionaries')
+    @pytest.mark.it('returns a tuple of dictionaries')
+    @pytest.mark.asyncio
+    async def test_returns_correct_dict(self, small_order_book, short_message):
+        result = await small_order_book.update_order_book(short_message)
+        assert isinstance(result, tuple)
+        assert isinstance(result[0], dict)
+        assert isinstance(result[1], dict)
+     
+
+    @pytest.mark.it('updates both sides of the order book correctly for a message with bids only, asks only or both bids and asks')
+    @pytest.mark.parametrize('message, expected_output',
+                        [
+                            ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [['114000.57000000', '0.30000000']],'a': []},
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    114000.57000000 : 0.30000000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000}
+                                )
+                            ),  
+
+                            ({'e': 'depthUpdate','E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [],'a': [['113666.20000000', '2.93563000']]}, 
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    113666.20000000 : 2.93563000}
+                                )
+                            ),
+                            ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
+                            'U': 74105025814, 'u': 74105025843, 
+                            'b': [['114000.57000000', '0.30000000']],'a': [['113666.20000000', '2.93563000']]},
+                                (
+                                    {113678.85000000 : 7.25330000, 
+                                    113678.84000000 : 0.77360000,
+                                    114000.57000000 : 0.30000000},
+                                    {113678.86000000 : 1.93563000, 
+                                    113900.35000000 : 0.13677000,
+                                    113666.20000000 : 2.93563000}
+                                ) 
+                              )
+                        ],
+                        ids = ['bids only',
+                               'asks only',
+                               'bids and asks'])
+    @pytest.mark.asyncio
+    async def test_updates_both_sides_correctly(self, small_order_book, message, expected_output):
+        result = await small_order_book.update_order_book(message)
+        assert result == expected_output
+
+
+
+class TestPrepareForValidation:
+
+    @pytest.mark.it('returns expected type')
+    @pytest.mark.asyncio
+    async def test_returns_correct_type(self,big_order_book):
+        result = await big_order_book.prepare_local_copy_for_validation(num_records=2)
+        assert isinstance(result, OrderBook)
+        assert isinstance(result.ob_bids, dict)
+        assert isinstance(result.ob_asks, dict)
+
+    @pytest.mark.it('does sorting correctly')
+    # Bids should be sorted in the reverse order 
+    @pytest.mark.parametrize('ob_bids, ob_asks, expected_ob_bids, expected_ob_asks',
+                                 [
+                                    ({9.2 : 1.1, 16.3: 8.4, 12.6: 2.5}, {}, {16.3: 8.4, 12.6: 2.5, 9.2 : 1.1},{}),
+                                    ({}, {22.9: 15.1, 16.4 : 0.7, 17.6 : 2.2}, {},{16.4 : 0.7, 17.6 : 2.2, 22.9: 15.1}),
+                                    ({9.2 : 1.1, 16.3: 8.4, 12.6: 2.5}, {22.9: 15.1, 16.4 : 0.7, 17.6 : 2.2}, {16.3: 8.4, 12.6: 2.5, 9.2 : 1.1},{16.4 : 0.7, 17.6 : 2.2, 22.9: 15.1}),
+
+                                 ],
+                            ids = ['sorts bids correctly', 'sorts asks correctly', 'sorts both sides simultaneously'])
+    @pytest.mark.asyncio
+    async def test_correct_sorting(self, ob_bids, ob_asks, expected_ob_bids, expected_ob_asks):
+        order_book = OrderBook()
+        order_book.ob_bids = ob_bids
+        order_book.ob_asks = ob_asks
+        result = await order_book.prepare_local_copy_for_validation(num_records=3)
+        assert result.ob_bids == expected_ob_bids
+        assert result.ob_asks == expected_ob_asks
+
+    @pytest.mark.it('does trimming correctly')
+    @pytest.mark.parametrize('ob_bids, ob_asks, expected_ob_bids, expected_ob_asks',
+                                     [
+                                        ({9.2 : 1.1, 16.3: 8.4, 12.6: 2.5}, {}, {16.3: 8.4, 12.6: 2.5},{}),
+                                        ({}, {22.9: 15.1, 16.4 : 0.7, 17.6 : 2.2}, {},{16.4 : 0.7, 17.6 : 2.2}),
+                                        ({9.2 : 1.1, 16.3: 8.4, 12.6: 2.5}, {22.9: 15.1, 16.4 : 0.7, 17.6 : 2.2}, {16.3: 8.4, 12.6: 2.5},{16.4 : 0.7, 17.6 : 2.2}),
+                                        ({9.2 : 1.1, 16.3: 8.4}, {22.9: 15.1, 16.4 : 0.7}, {16.3 : 8.4, 9.2 : 1.1}, {16.4:0.7, 22.9:15.1} )
+    
+                                     ],
+                                ids = ['sorts and trims bids correctly', 'sorts and trims asks correctly', 'sorts and trims both sides simultaneously', 'sorts only in trimming is not needed'])
+    @pytest.mark.asyncio
+    async def test_correct_trimming(self, ob_bids, ob_asks, expected_ob_bids, expected_ob_asks):
+        order_book = OrderBook()
+        order_book.ob_bids = ob_bids
+        order_book.ob_asks = ob_asks
+        result = await order_book.prepare_local_copy_for_validation(num_records=2)
+        assert result.ob_bids == expected_ob_bids
+        assert result.ob_asks == expected_ob_asks
+
+
+# TODO - assert len(small_order_book.content.keys()) == 3 fails - skipping for now as we're planning to get rid of content property altogether
+# class TestSortUpdatedOrderBook:
+#     @pytest.mark.it('returns a dictionary with correct keys')
 #     @pytest.mark.asyncio
 #     async def test_returns_correct_dict(self, small_order_book, short_message):
 #         await small_order_book.extract_order_book_bids_asks()
-#         result = await small_order_book.update_order_book(short_message)
-#         assert isinstance(result, tuple)
-#         assert isinstance(result[0], dict)
-#         assert isinstance(result[1], dict)
-        
-
-#     @pytest.mark.it('updates both sides of the order book correctly for a message with bids only, asks only or both bids and asks')
-#     @pytest.mark.parametrize('message, expected_output',
-#                         [
-#                             ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
-#                             'U': 74105025814, 'u': 74105025843, 
-#                             'b': [['114000.57000000', '0.30000000']],'a': []},
-#                                 (
-#                                     {113678.85000000 : 7.25330000, 
-#                                     113678.84000000 : 0.77360000,
-#                                     114000.57000000 : 0.30000000},
-#                                     {113678.86000000 : 1.93563000, 
-#                                     113900.35000000 : 0.13677000}
-#                                 )
-#                             ),    
-#                             ({'e': 'depthUpdate','E': 1754423900214, 's': 'BTCUSDT', 
-#                             'U': 74105025814, 'u': 74105025843, 
-#                             'b': [],'a': [['113666.20000000', '2.93563000']]}, 
-#                                 (
-#                                     {113678.85000000 : 7.25330000, 
-#                                     113678.84000000 : 0.77360000},
-#                                     {113678.86000000 : 1.93563000, 
-#                                     113900.35000000 : 0.13677000,
-#                                     113666.20000000 : 2.93563000}
-#                                 )
-#                             ),
-#                             ({'e': 'depthUpdate', 'E': 1754423900214, 's': 'BTCUSDT', 
-#                             'U': 74105025814, 'u': 74105025843, 
-#                             'b': [['114000.57000000', '0.30000000']],'a': [['113666.20000000', '2.93563000']]},
-#                                 (
-#                                     {113678.85000000 : 7.25330000, 
-#                                     113678.84000000 : 0.77360000,
-#                                     114000.57000000 : 0.30000000},
-#                                     {113678.86000000 : 1.93563000, 
-#                                     113900.35000000 : 0.13677000,
-#                                     113666.20000000 : 2.93563000}
-#                                 ) 
-#                               )
-#                         ],
-#                         ids = ['bids only',
-#                                'asks only',
-#                                'bids and asks'])
-#     @pytest.mark.asyncio
-#     async def test_updates_both_sides_correctly(self, small_order_book, message, expected_output):
-#         await small_order_book.extract_order_book_bids_asks()
-#         result = await small_order_book.update_order_book(message)
-#         assert result == expected_output
-  
-# # # TODO - assert len(small_order_book.content.keys()) == 3 fails - skipping for now as we're planning to get rid of content property altogether
-# # # class TestSortUpdatedOrderBook:
-# # #     @pytest.mark.it('returns a dictionary with correct keys')
-# # #     @pytest.mark.asyncio
-# # #     async def test_returns_correct_dict(self, small_order_book, short_message):
-# # #         await small_order_book.extract_order_book_bids_asks()
-# # #         await small_order_book.update_order_book(short_message)
-# # #         await small_order_book.sort_updated_order_book()
-# # #         assert isinstance(small_order_book.content, dict)
-# # #         assert len(small_order_book.content.keys()) == 3
-# # #         assert set(['lastUpdateId','bids','asks']) == set(small_order_book.content.keys())
+#         await small_order_book.update_order_book(short_message)
+#         await small_order_book.sort_updated_order_book()
+#         assert isinstance(small_order_book.content, dict)
+#         assert len(small_order_book.content.keys()) == 3
+#         assert set(['lastUpdateId','bids','asks']) == set(small_order_book.content.keys())
 
 
 # #     @pytest.mark.it('sorts bids in desc and asks in asc order')
