@@ -27,7 +27,12 @@ async def initialise_order_book_stream(websocket,
 
     order_book = await create_order_book(snapshot)
 
-    ws_processing_task = asyncio.create_task(ws_processing(order_book, buffer, match_found, verification_snapshot_timestamp,stop_fetching_verification_snapshots))
-    
+    ws_processing_task = asyncio.create_task(ws_processing(
+        order_book, 
+        buffer, 
+        match_found, 
+        verification_snapshot_timestamp,
+        stop_fetching_verification_snapshots))
+   
     return order_book, ws_ingestion_task, ws_processing_task
 

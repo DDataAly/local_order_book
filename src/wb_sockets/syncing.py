@@ -40,7 +40,6 @@ async def get_order_book() -> dict:
             async with session.get('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=10') as response:
                 response.raise_for_status()
                 snapshot = await response.json()
-                print(type(snapshot))
         except aiohttp.ContentTypeError as e:
             print(f'The server response file is not a valid json: {e}') 
             raise
