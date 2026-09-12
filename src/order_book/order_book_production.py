@@ -11,7 +11,6 @@ async def create_order_book(snapshot) -> OrderBook:
     try:
         order_book = OrderBook() 
         order_book.ob_bids, order_book.ob_asks = await order_book.extract_order_book_bids_asks(snapshot)
-        order_book.ob_bids_prices, order_book.ob_asks_prices =  await order_book.extract_order_book_prices()
         print(f'Order book object has been created based on the snapshot with the last update ID {snapshot["lastUpdateId"]}')   
         return order_book
     except Exception:
