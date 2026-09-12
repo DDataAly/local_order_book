@@ -49,10 +49,10 @@ async def is_continuous(curr_msg, buffer:deque) -> bool:
     print(f"Condition is not met")
     return False
 
-o
-async def ws_processing(order_book, buffer, match_found: asyncio.Event, stop_fetching_verification_snapshot: asyncio.Event, snapshot_timestamp: list):
+async def ws_processing(order_book, buffer, match_found: asyncio.Event, snapshot_timestamp: list, stop_fetching_verification_snapshot: asyncio.Event):
     # Infinite processing function
     while True:
+        print('Inside processing loop')
         if len(buffer) < 1:
             await asyncio.sleep(0.1)
             continue
@@ -76,24 +76,29 @@ async def ws_processing(order_book, buffer, match_found: asyncio.Event, stop_fet
 
             # Verification stage - this block runs when run_verification returns snapshot_timestamp
             if not snapshot_timestamp[0]==None:
+                print('a cat?')
                 msg_timestamp = curr_msg["u"] 
+                print(f'Running ws_processing in the verification mode, current msg_timestamp is {msg_timestamp}')
 
                 if snapshot_timestamp[0] > msg_timestamp:
                     # curr_msg timestamp is behind the snapshot_timestamp - the snapshot is potentially suitable, 
                     # keep processing messages from the buffer and compare with the same snapshot_timestamp[0]
+                    print ('Verification snapshot might be suitable, continue processing')
                     stop_fetching_verification_snapshot.set()
                     pass
                
                 elif snapshot_timestamp[0] == msg_timestamp:
                     # curr_msg timestamp equal snapshot_timestamp - local order book copy is in sync with the snaphshot
                     # we can stop ws_processing and start verification
+                    print ('Match found')
                     match_found.set()
                     break
                 else:
                     # curr_msg timestamp is ahead snapshot_timestamp - we need to fetch a new snapshot
+                    print ('Verification snapshot is not suitable, will need to get a new one')
                     snapshot_timestamp[0]=None
                     stop_fetching_verification_snapshot.clear()
-
+  
             await asyncio.sleep(0.1)
 
         except MissingMessageInIngestedStream:
