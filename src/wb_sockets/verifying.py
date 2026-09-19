@@ -8,9 +8,10 @@ async def run_comparison (verification_snapshot: dict,
     verification_order_book=OrderBook()
     verification_order_book.ob_bids, verification_order_book.ob_asks = await verification_order_book.extract_order_book_bids_asks(verification_snapshot)
 
-    order_book.prepare_local_copy_for_validation(order_book_depth)
+    await order_book.prepare_local_copy_for_validation(order_book_depth)
     if order_book.ob_bids == verification_order_book.ob_bids: 
         if order_book.ob_asks == verification_order_book.ob_asks:
+            print('Local order book was compared with the fresh copy - and they match!')
             return True 
 
     return False
