@@ -1,5 +1,8 @@
 import json
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def _send_subscription_request(websocket) -> str:
     """
@@ -36,7 +39,7 @@ async def _send_subscription_request(websocket) -> str:
             "params": ["btcusdt@depth@100ms"], 
             "id": 1}))
     response = await websocket.recv()
-    return (response)
+    return response
 
 
 async def _is_subscription_confirmed(response) -> bool:
@@ -50,7 +53,7 @@ async def _is_subscription_confirmed(response) -> bool:
     try:
         response_dict = json.loads(response)
     except json.JSONDecodeError as e:
-        print (f'Invalid format of server response: {e}') 
+        logger.debug (f'Invalid format of server response: {e}') 
         return False  
          
     if response_dict.keys() == {'result','id'}:
@@ -73,4 +76,4 @@ async def run_the_subscriber(websocket):
     while not await _is_subscription_confirmed(response):
         await asyncio.sleep(0.1)
         response = await websocket.recv()
-    print ('Subscription is confirmed')  
+    logger.info('Subscription is confirmed')  
