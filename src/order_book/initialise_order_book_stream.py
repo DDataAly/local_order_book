@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from collections import deque
 from wb_sockets import ws_ingestion, fetch_order_book_snapshot, find_matching_message, ws_processing
 from order_book.order_book_production import create_order_book
 
+logger = logging.getLogger(__name__)
 
 async def initialise_order_book_stream(websocket, 
                                        match_found: asyncio.Event, 
@@ -13,16 +15,16 @@ async def initialise_order_book_stream(websocket,
 
     try:
         snapshot = await asyncio.wait_for(fetch_order_book_snapshot(buffer), timeout=5)
-        print('Suitable order book fetched, saving it now....')
+        logger.info('Suitable order book fetched, saving it now....')
     except asyncio.TimeoutError:
-        print('No suitable order book fetched, can\'t proceed')
+        logger.error('No suitable order book fetched, can\'t proceed')
         raise  
 
     try:
-        matching_message = await asyncio.wait_for(find_matching_message(snapshot["lastUpdateId"], buffer), timeout = 5)  
-        print(f' Matching message is found {matching_message}. Starting processing') 
+        await asyncio.wait_for(find_matching_message(snapshot["lastUpdateId"], buffer), timeout = 5)  
+        logger.info(' Matching message is found. Starting processing') 
     except asyncio.TimeoutError:
-        print('No suitable Websocket stream message fetched, can\'t proceed')
+        logger.error('No suitable Websocket stream message fetched, can\'t proceed')
         raise
 
     order_book = await create_order_book(snapshot)
