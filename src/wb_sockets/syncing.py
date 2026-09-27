@@ -1,7 +1,10 @@
 import aiohttp
 import asyncio
 import json
+import logging
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 async def get_first_depth_update_id(buffer: deque[str]) -> int:
     """
@@ -21,10 +24,10 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
         except json.JSONDecodeError:
             continue    
         if 'U' in parsed:
-            print(f'First depth update message in the stream is {parsed}')
+            logger.debug(f'First depth update message in the stream is {parsed}')
             return parsed["U"]
         else:
-            print(f'Skipping non-depthUpdate message: {parsed}')
+            logger.debug(f'Skipping non-depthUpdate message: {parsed}')
         await asyncio.sleep(0.01)
 
 async def get_order_book() -> dict:
@@ -41,13 +44,13 @@ async def get_order_book() -> dict:
                 response.raise_for_status()
                 snapshot = await response.json()
         except aiohttp.ContentTypeError as e:
-            print(f'The server response file is not a valid json: {e}') 
+            logger.warning(f'The server response file is not a valid json: {e}') 
             raise
         except aiohttp.ClientError as e:
-            print (f'Error fetching the order book snapshot: {e}') 
+            logger.warning (f'Error fetching the order book snapshot: {e}') 
             raise
         except Exception as e:
-            print(f'An error occurred fetching the order book copy: {e}')
+            logger.warning(f'An error occurred fetching the order book copy: {e}')
             raise
     return snapshot
 
@@ -63,7 +66,7 @@ def validate_snapshot(snapshot: dict) -> bool:
                 assert not(float(qty) == 0 or float(price) == 0)
 
     except Exception as e:
-        print("Invalid snapshot received, retrying")
+        logger.warning("Invalid snapshot received, retrying")
         return False
     return True
 
@@ -92,7 +95,7 @@ async def fetch_order_book_snapshot(buffer) -> dict:
                 order_book_last_update_id = snapshot["lastUpdateId"]
                 first_received_message_id = await get_first_depth_update_id(buffer)
                 if order_book_last_update_id >= first_received_message_id:
-                    print(f'A valid snapshot of the order book is found')
+                    logger.info(f'A valid snapshot of the order book is found')
                     return snapshot   
         except Exception:
             continue    
@@ -133,11 +136,13 @@ async def find_matching_message(order_book_last_update_id, buffer) -> None:
 
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
-                print(f'Match is found: {parsed}')
+                logger.debug(f'Message id is {message_final_update_id}')
+                logger.debug(f'Order book stamp is {order_book_last_update_id}')
+                logger.info(f'Match is found')
                 return parsed
             else:
                 buffer.popleft()
-        print('No matching message found in the buffer yet.')
+        logger.debug('No matching message found in the buffer yet.')
 
 
 
