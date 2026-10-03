@@ -1,7 +1,41 @@
 from collections import deque
 import websockets 
 import json
+import logging
 
+logger = logging.getLogger(__name__)
+
+# TODO: this is a working draft not finished version
+# Check issue ws_ingestion completion #33 on GitHUB for a list of known issues
+async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
+    faulty_tracker = 0
+    end_timestamp = 0
+    num_arrived_msg =0
+    while faulty_tracker <=10:
+        logger.debug('Ingestion in progress')
+        response = await websocket.recv() 
+        num_arrived_msg= num_arrived_msg+1
+        msg = json.loads(response)
+        logger.debug(f'This is Websockets message {msg}')
+        beg_timestamp = int(msg['U'])
+        logger.debug(f'This is end of previous Websockets msg: {end_timestamp}')
+        logger.debug(f'This is the beginning of current Websockets msg: {beg_timestamp}')
+
+        if end_timestamp == 0:
+            logger.debug('We are processing first Websockets message')
+            buffer.append(response)
+            end_timestamp = int(msg['u'])
+        else:
+            if beg_timestamp - end_timestamp ==1:
+                logger.debug('Continuity passed')
+                buffer.append(response)
+                end_timestamp = int(msg['u'])
+            else:
+                faulty_tracker= faulty_tracker +1
+                logger.warning(f'Continuity failed. We received {num_arrived_msg} messages and encountered {faulty_tracker} breakages')
+
+
+# Previous version
 # async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
 #     """
 #     Infinite function which receives order book prices and quantity updates and adds them to buffer
@@ -19,37 +53,6 @@ import json
 #         print(a['U'])
 #         print(a['u'])
 #         buffer.append(response)
-
-
-
-
-async def ws_ingestion(websocket: websockets.WebSocketClientProtocol,buffer: deque[str]):
-    faulty_tracker = 0
-    end_timestamp = 0
-    num_arrived_msg =0
-    while faulty_tracker <=10:
-        print('Continue ingestion')
-        response = await websocket.recv() 
-        num_arrived_msg= num_arrived_msg+1
-        msg = json.loads(response)
-        print(f'This is Websockets message {msg}')
-        beg_timestamp = int(msg['U'])
-        print(f'This is end of previous Websockets msg: {end_timestamp}')
-        print(f'This is the beginning of current Websockets msg: {beg_timestamp}')
-
-        if end_timestamp == 0:
-            print('We are processing first Websockets message')
-            buffer.append(response)
-            end_timestamp = int(msg['u'])
-        else:
-            if beg_timestamp - end_timestamp ==1:
-                print('Continuity passed')
-                buffer.append(response)
-                end_timestamp = int(msg['u'])
-            else:
-                print('Continuity failed')
-                faulty_tracker= faulty_tracker +1
-        print(f'We received {num_arrived_msg} messages and encountered {faulty_tracker} breakages')
 
 
 
