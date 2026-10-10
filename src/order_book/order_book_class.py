@@ -42,6 +42,7 @@ class OrderBook:
             await self.update_order_book_side (message, side_key)
         return self.ob_bids, self.ob_asks
 
+
     async def prepare_local_copy_for_validation(self, num_records: int =5000) -> Self:
         ob_bids_list = sorted(self.ob_bids.items(),reverse=True)
         ob_asks_list = sorted(self.ob_asks.items())
@@ -49,29 +50,8 @@ class OrderBook:
         self.ob_asks = dict(ob_asks_list[:num_records])
         return self
 
-
-    # async def sort_updated_order_book(self) -> dict:
-    #     ob_bids_list = sorted(self.ob_bids.items(),reverse=True)
-    #     ob_asks_list = sorted(self.ob_asks.items())
-    #     self.content ['bids'] = [[f'{bid[0]:.8f}', f'{bid[1]:.8f}'] for bid in ob_bids_list]
-    #     self.content ['asks'] = [[f'{ask[0]:.8f}', f'{ask[1]:.8f}'] for ask in ob_asks_list]
-                       
-    
-    # async def trim_order_book(self, num_records: int =5000) -> dict:
-    #     # Binance order book snapshot contains 5000 records
-    #     # We need to trim the order book as we have reliable data only for 5000 records
-    #     self.content['bids'] = self.content['bids'][0:num_records]
-    #     self.content['asks'] = self.content['asks'][0:num_records]
-    
-
-    # async def prepare_local_copy_for_validation (self) -> Self:
-    #     await self.sort_updated_order_book()
-    #     await self.trim_order_book()
-    #     return self
-   
-    # Maintaining price list - not strictly required for order book
+    # Maintaining price list - not currently used - will need to review 
     # Going to use at the later stages of the project    
-
 
     async def extract_order_book_prices (self) -> tuple[list[float],list[float]]:
         #Doing sorting just in case there is some error in the snapshot and sorting is wrong
