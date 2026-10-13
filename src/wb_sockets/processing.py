@@ -1,6 +1,9 @@
 import asyncio
 import json
 from collections import deque
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MissingMessageInIngestedStream(Exception):
@@ -20,12 +23,12 @@ async def to_do_processing_logic(order_book, message):
     Returns:
             None
     """
-    print("Trying to execute the logic")
+    logger.debug("Trying to execute the logic")
     order_book.ob_bids, order_book.ob_asks = await order_book.update_order_book(message)
     order_book.ob_bids_prices, order_book.ob_asks_prices = (
         await order_book.update_price_lists(message)
     )
-    print("Processing is done")
+    logger.debug("Processing is done")
 
 
 async def is_continuous(curr_msg, buffer:deque) -> bool:
@@ -37,43 +40,67 @@ async def is_continuous(curr_msg, buffer:deque) -> bool:
 
     try:
         next_msg_first_id = int(json.loads(buffer[0])["U"])
-        print(f"Last update current {curr_msg['u']}, first update next {next_msg_first_id}")
+        logger.debug(f"Last update current {curr_msg['u']}, first update next {next_msg_first_id}")
 
         # If there is no id gaps between messages
         if next_msg_first_id == target_id:
-            print("Condition is met")
+            logger.debug("Condition is met")
             return True
     except Exception as e:
-        print(f"Message in the buffer can not be processed: {e}")
+        logger.debug(f"Message in the buffer can not be processed: {e}")
 
-    print(f"Condition is not met")
+    logger.error(f"Continuity check failed")
     return False
 
-
-async def ws_processing(order_book, buffer):
+async def ws_processing(order_book, buffer, match_found: asyncio.Event, snapshot_timestamp: list, stop_fetching_verification_snapshot: asyncio.Event):
+    logger.info('Processing has started')
     # Infinite processing function
+    num_processed_msg = 0
     while True:
+        logger.debug(f'This is the verification_snapshot_timestamp: {snapshot_timestamp[0]}')
         if len(buffer) < 1:
             await asyncio.sleep(0.1)
             continue
 
         try:
-            print("Continue processing")
-            print(f"This is buffer (len={len(buffer)}): {buffer}")
+            logger.debug("Processing in progress")
             msg_str = buffer.popleft()
-            print(f"After popleft (len={len(buffer)}): {buffer}")
             curr_msg = json.loads(msg_str)
-            print(f"Parsed JSON OK. This is curr_msg: {curr_msg}")
-
 
             if await is_continuous(curr_msg, buffer):
-                print(f"Printing the message I am going to process: {curr_msg}. It has type {type(curr_msg)}")
+                logger.debug(f"Printing the message I am going to process: {curr_msg}")
                 await to_do_processing_logic(order_book, curr_msg)
+                num_processed_msg = num_processed_msg +1
             else:
                 raise MissingMessageInIngestedStream(
                     "The message stream is not continuous. Launching re-sync"
                 )
-            
+
+            # Verification stage - this block runs when run_verification returns snapshot_timestamp
+            if not snapshot_timestamp[0]==None:
+                msg_timestamp = curr_msg["u"] 
+                logger.debug(f'Running ws_processing in the verification mode, current msg_timestamp is {msg_timestamp}')
+
+                if snapshot_timestamp[0] > msg_timestamp:
+                    # curr_msg timestamp is behind the snapshot_timestamp - the snapshot is potentially suitable, 
+                    # keep processing messages from the buffer and compare with the same snapshot_timestamp[0]
+                    logger.debug ('Verification snapshot might be suitable, continue processing')
+                    stop_fetching_verification_snapshot.set()
+                    pass
+               
+                elif snapshot_timestamp[0] == msg_timestamp:
+                    # curr_msg timestamp equal snapshot_timestamp - local order book copy is in sync with the snaphshot
+                    # we can stop ws_processing and start verification
+                    logger.info ('Match found')
+                    match_found.set()
+                    break
+                else:
+                    # curr_msg timestamp is ahead snapshot_timestamp - we need to fetch a new snapshot
+                    logger.debug ('Verification snapshot is not suitable, will need to get a new one')
+                    snapshot_timestamp[0]=None
+                    stop_fetching_verification_snapshot.clear()
+  
+            logger.debug(f'We processed {num_processed_msg} messages')
             await asyncio.sleep(0.1)
 
         except MissingMessageInIngestedStream:
@@ -82,5 +109,6 @@ async def ws_processing(order_book, buffer):
         except Exception as e:
             buffer.appendleft(curr_msg)
             await asyncio.sleep(0.1)
-            print(f"Something is wrong with processing: {e}")
+            logger.error(f"Something went wrong with processing when trying to process message with timestamp {curr_msg['u']}: {e}")
             raise
+

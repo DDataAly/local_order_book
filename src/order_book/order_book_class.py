@@ -7,12 +7,8 @@ logger = logging.getLogger(__name__)
 
 PriceChange = namedtuple('PriceChange', ['prices_to_add_or_update', 'prices_to_remove'])
 
-class EmptyOrderBookException(Exception):
-    """Raised when the order book snapshot has no asks or bids values"""   
-
 class OrderBook:
-    def __init__(self, content:dict = None):
-        self.content = content
+    def __init__(self):
         self.ob_bids: dict[float, float] = {} 
         self.ob_asks: dict[float, float] = {} 
         self.ob_bids_prices: list[float] = [] # always sorted ASC
@@ -20,20 +16,11 @@ class OrderBook:
         
     # Maintaining order book
 
-    async def extract_order_book_bids_asks (self) -> tuple[list[float], list[float]]:
-        try:
-            self.ob_bids = {float(price):float(qty) for price,qty in self.content['bids']}
-            self.ob_asks = {float(price):float(qty) for price,qty in self.content['asks']}
-            if len(self.ob_bids) == 0 or len(self.ob_asks) == 0:
-                logger.critical ('Order book snapshot doesn\'t contain bids or asks and can\'t be processed')
-                # Need to raise error as the execution of the code can't be continued
-                raise EmptyOrderBookException ("No bids or asks in the order book snapshot")
-        except (TypeError, KeyError, ValueError) as e:
-            # Need to raise error as the execution of the code can't be continued 
-            logger.critical (f'Order book snapshot is not valid and can\'t be processed: {e}')
-            raise 
+    async def extract_order_book_bids_asks (self, snapshot: dict) -> tuple[list[float], list[float]]:
+        self.ob_bids = {float(price):float(qty) for price,qty in snapshot['bids']}
+        self.ob_asks = {float(price):float(qty) for price,qty in snapshot['asks']}
         return (self.ob_bids, self.ob_asks)    
-    
+
 
     async def update_order_book_side(self, message: dict, book_side: str) -> dict:
         side = self.ob_bids if book_side == 'b' else self.ob_asks
@@ -51,37 +38,20 @@ class OrderBook:
     
 
     async def update_order_book(self, message: dict) -> tuple[dict, dict]:
-        try:
-            self.content["lastUpdatedId"] = message ['u']
-            for side_key in ['b', 'a']:
-                await self.update_order_book_side (message, side_key)
-        except KeyError as e:
-            logger.warning(f'Bad message received, skipping: {e}')      
+        for side_key in ['b', 'a']:
+            await self.update_order_book_side (message, side_key)
         return self.ob_bids, self.ob_asks
-    
 
-    async def sort_updated_order_book(self) -> dict:
+
+    async def prepare_local_copy_for_validation(self, num_records: int =5000) -> Self:
         ob_bids_list = sorted(self.ob_bids.items(),reverse=True)
         ob_asks_list = sorted(self.ob_asks.items())
-        self.content ['bids'] = [[f'{bid[0]:.8f}', f'{bid[1]:.8f}'] for bid in ob_bids_list]
-        self.content ['asks'] = [[f'{ask[0]:.8f}', f'{ask[1]:.8f}'] for ask in ob_asks_list]
-                       
-    
-    async def trim_order_book(self, num_records: int =5000) -> dict:
-        # Binance order book snapshot contains 5000 records
-        # We need to trim the order book as we have reliable data only for 5000 records
-        self.content['bids'] = self.content['bids'][0:num_records]
-        self.content['asks'] = self.content['asks'][0:num_records]
-    
-
-    async def prepare_local_copy_for_validation (self) -> Self:
-        await self.sort_updated_order_book()
-        await self.trim_order_book()
+        self.ob_bids = dict(ob_bids_list[:num_records])
+        self.ob_asks = dict(ob_asks_list[:num_records])
         return self
-   
-    # Maintaining price list - not strictly required for order book
-    # Going to use at the later stages of the project    
 
+    # Maintaining price list - not currently used - will need to review 
+    # Going to use at the later stages of the project    
 
     async def extract_order_book_prices (self) -> tuple[list[float],list[float]]:
         #Doing sorting just in case there is some error in the snapshot and sorting is wrong

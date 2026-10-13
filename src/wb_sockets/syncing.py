@@ -1,7 +1,10 @@
 import aiohttp
 import asyncio
 import json
+import logging
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 async def get_first_depth_update_id(buffer: deque[str]) -> int:
     """
@@ -21,10 +24,10 @@ async def get_first_depth_update_id(buffer: deque[str]) -> int:
         except json.JSONDecodeError:
             continue    
         if 'U' in parsed:
-            print(f'First depth update message in the stream is {parsed}')
+            logger.debug(f'First depth update message in the stream is {parsed}')
             return parsed["U"]
         else:
-            print(f'Skipping non-depthUpdate message: {parsed}')
+            logger.debug(f'Skipping non-depthUpdate message: {parsed}')
         await asyncio.sleep(0.01)
 
 async def get_order_book() -> dict:
@@ -41,27 +44,31 @@ async def get_order_book() -> dict:
                 response.raise_for_status()
                 snapshot = await response.json()
         except aiohttp.ContentTypeError as e:
-            print(f'The server response file is not a valid json: {e}') 
+            logger.warning(f'The server response file is not a valid json: {e}') 
             raise
         except aiohttp.ClientError as e:
-            print (f'Error fetching the order book snapshot: {e}') 
+            logger.warning (f'Error fetching the order book snapshot: {e}') 
             raise
         except Exception as e:
-            print(f'An error occurred fetching the order book copy: {e}')
+            logger.warning(f'An error occurred fetching the order book copy: {e}')
             raise
     return snapshot
+
 
 def validate_snapshot(snapshot: dict) -> bool:
     try:
         assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
-        assert all([float(snapshot[side][0][0]) for side in['bids', 'asks']])
-        assert all([float(snapshot[side][0][1]) for side in['bids', 'asks']])
+        assert all(len(snapshot[key])!=0 for key in ['asks', 'bids'])
+        assert isinstance(snapshot['lastUpdateId'], int) 
+        
+        for side in ['bids', 'asks']:
+            for price,qty in snapshot[side]:
+                assert not(float(qty) == 0 or float(price) == 0)
+
     except Exception as e:
-        print("Invalid snapshot received, retrying")
+        logger.warning("Invalid snapshot received, retrying")
         return False
     return True
-
-
 
 
 async def fetch_order_book_snapshot(buffer) -> dict:
@@ -88,7 +95,7 @@ async def fetch_order_book_snapshot(buffer) -> dict:
                 order_book_last_update_id = snapshot["lastUpdateId"]
                 first_received_message_id = await get_first_depth_update_id(buffer)
                 if order_book_last_update_id >= first_received_message_id:
-                    print(f'A valid snapshot of the order book is found')
+                    logger.info(f'A valid snapshot of the order book is found')
                     return snapshot   
         except Exception:
             continue    
@@ -129,10 +136,93 @@ async def find_matching_message(order_book_last_update_id, buffer) -> None:
 
             message_final_update_id = parsed ['u']
             if message_final_update_id > order_book_last_update_id:
-                print(f'Match is found: {parsed}')
+                logger.debug(f'Message id is {message_final_update_id}')
+                logger.debug(f'Order book stamp is {order_book_last_update_id}')
+                logger.info(f'Match is found')
                 return parsed
             else:
                 buffer.popleft()
-        print('No matching message found in the buffer yet.')
+        logger.debug('No matching message found in the buffer yet.')
 
+
+
+# sandbox
+# Original function:
+# def validate_snapshot(snapshot: dict) -> bool:
+    # try:
+    #     assert all([item in snapshot.keys() for item in ['lastUpdateId', 'asks', 'bids']])
+    #     assert all([float(snapshot[side][0][0]) for side in['bids', 'asks']])
+    #     assert all([float(snapshot[side][0][1]) for side in['bids', 'asks']])
+    # except Exception as e:
+    #     print("Invalid snapshot received, retrying")
+    #     return False
+    # return True
+
+# def validation_practice(snapshot:dict) -> bool:
+#     for side in ['bids', 'asks']:
+#         for item in snapshot[side]:
+#             print(float(item[0]))
+#     for side in ['bids', 'asks']:
+#         for item in snapshot[side]:
+#             print(float(item[1]))
+
+# def validation_practice2(snapshot: dict) -> bool:
+#     try: 
+#         assert all ([float(item[1]) for item in snapshot[side]] for side in ['bids', 'asks'])
+#         print('happy cats')
+#     except Exception:
+#         print('Invalid snapshot received')    
+
+# test_snapshot = {"lastUpdateId": 123, 
+#                  "bids": [['1.0','1.0'], ['1.1', '2.1']], 
+#                  'asks': [['4.1', '4.0'], ['3.1', '3.0']]}
+
+# # validation_practice(test_snapshot)
+# print('cats')
+# # validation_practice2(test_snapshot)
+
+# def validation_practice3(snapshot:dict) -> bool:
+#     for side in ['bids', 'asks']:
+#         for item in snapshot[side]:
+#             if float(item[0])!=0 and float(item[1])!=0:
+#                 print(True)
+#             else:
+#                 print (False)
+
+# # validation_practice3(test_snapshot)
+
+# def validation_practice4(snapshot:dict):
+#     try:
+#         assert all([True if (float(item[0])!=0 and float(item[1])!=0) else False for item in snapshot[side]] for side in ['bids', 'asks'])
+#         print ('Valid')
+#     except Exception:
+#         print ('Not valid')
+
+# # validation_practice4(test_snapshot)
+
+# def validation_practice5(snapshot:dict) -> bool:
+#     new_list=[]
+#     for side in ['bids', 'asks']:
+#         for qty,price in snapshot[side]:
+#             if float(qty) ==0 or float(price) ==0:
+#                 new_list.append('zero value found')
+#                 assert len(new_list) == 0
+
+# # validation_practice5(test_snapshot)
+
+# def validation_practice6(snapshot:dict) -> bool:
+#     for side in ['bids', 'asks']:
+#         for price,qty in snapshot[side]:
+#             assert not(float(qty) ==0 or float(price) ==0)
+
+# def validation_practice7(snapshot):
+#     assert all ((float(item[0])!=0 and float(item[1])!=0) for side in ['bids', 'asks'] for item in snapshot[side])
+#     print('Wohoo!')
+
+# test_snapshot = {"lastUpdateId": 123, 
+#                  "bids": [['1.0','1.0'], ['1.1', '2.1']], 
+#                  'asks': [['emma', '4.0'], ['3.1', '3.0']]}
+
+
+# validation_practice7(test_snapshot)
 
