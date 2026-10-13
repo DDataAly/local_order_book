@@ -1,4 +1,5 @@
 # 📈 Local Order Book – Binance WebSockets Stream
+# Out of sync with the project state - working on updating
 
 ## 🔰 Overview
 An asynchronous Python project that creates and maintains a **local copy of Binance’s order book** in real time using WebSocket depth update streams.  
@@ -61,7 +62,7 @@ python main.py
 
 ## 🖥️ Demo Output - tests
 
-![Core logic tests output](data/tests_output_order_book_class.png)
+![Core logic tests output](docs/tests_output_order_book_class.png)
 
 ## 📁 File Structure
 Run the main event loop:
