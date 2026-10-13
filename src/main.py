@@ -1,12 +1,17 @@
 import asyncio
+import logging
 import time
 import websockets
 from order_book.initialise_order_book_stream import initialise_order_book_stream
 from wb_sockets.verifying import run_verification
 from wb_sockets import run_the_subscriber
+from utils import logger as logger_config
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
 order_book_depth = 10
+
+logger_config.setup_logger()
+logger = logging.getLogger(__name__)
 
 async def run_code(subscription_timeout, order_book_depth):
     # Initilise tasks as None for the case when the error is raised before they're defined
@@ -16,15 +21,15 @@ async def run_code(subscription_timeout, order_book_depth):
     ws_processing_task = None
 
     async with websockets.connect(uri) as websocket:
-        print("Connected to server")
+        logger.info("Connected to server")
         try:
             try:
                 await asyncio.wait_for(run_the_subscriber(websocket), timeout = subscription_timeout)
             except asyncio.TimeoutError:
-                print('Can\'t subscribe to the requested channel')
+                logger.error('Can\'t subscribe to the requested channel')
                 raise
             except Exception: 
-                print('Error at the subscription stage')
+                logger.error('Error at the subscription stage')
                 raise
             
             match_found = asyncio.Event()
@@ -34,7 +39,7 @@ async def run_code(subscription_timeout, order_book_depth):
             try:
                 order_book, ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket, match_found, verification_snapshot_timestamp, stop_fetching_verification_snapshots)
             except Exception:
-                print('Error at the initialisation stage')
+                logger.error('Error at the initialisation stage')
                 raise
                     
             
@@ -42,9 +47,9 @@ async def run_code(subscription_timeout, order_book_depth):
             await asyncio.gather(asyncio.shield(*tasks))
 
         finally:
-            print('Finally block actually runs')
+            logger.debug('Finally block actually runs')
             if both_tasks_running(ws_ingestion_task, ws_processing_task):
-                print('Both tasks are running')
+                logger.debug('Both tasks are running')
                 # await asyncio.gather(*tasks)
                 try:
                     verification_passed=await asyncio.wait_for(run_verification(
@@ -55,13 +60,13 @@ async def run_code(subscription_timeout, order_book_depth):
                             order_book_depth), 
                             timeout=5)
                     if verification_passed:
-                        print('Verification is successful')
+                        logger.info('Verification is successful')
                     else:
-                        print("Verification has failed")
+                        logger.error("Verification has failed")
                 except asyncio.TimeoutError:
-                    print('Verification has timed out without completion')
+                    logger.error('Verification has timed out without completion')
                 except Exception:
-                    print('An error occurred at verification stage')
+                    logger.error('An error occurred at verification stage')
 
             if ws_ingestion_task:
                     ws_ingestion_task.cancel()
@@ -71,7 +76,7 @@ async def run_code(subscription_timeout, order_book_depth):
                     ws_processing_task.cancel()
                     await asyncio.gather(ws_processing_task, return_exceptions=True)
 
-        print("WebSocket connection closed")
+        logger.info("WebSocket connection closed")
 
         
 
@@ -82,45 +87,25 @@ async def run_for_duration(runtime, subscription_timeout = 5):
         try:
             await asyncio.wait_for(run_code(subscription_timeout, order_book_depth), timeout = time_till_timeout)
         except asyncio.TimeoutError:
-            print('Program has been stopped due to the execution timeout') 
+            logger.info('Program has been stopped due to the execution timeout') 
             break   
         except Exception as e:
-            print(f'Restarting due to error: {e}')
+            logger.warning(f'Restarting due to error: {e}')
             continue
 
 
 def both_tasks_running(ws_ingestion_task, ws_processing_task):
     if ws_ingestion_task and ws_processing_task:
-        print('Both tasks are defined')
-        print(f'Ingestion task exists {ws_ingestion_task}')
-        print(f'Ingesting is running: {not ws_ingestion_task.done()}')
-        print(f'Processing task exists {ws_processing_task}')
-        print(f'Processing is running: {not ws_processing_task.done()}')
+        logger.debug('Both tasks are defined')
+        logger.debug(f'Ingestion task exists {ws_ingestion_task}')
+        logger.debug(f'Ingesting is running: {not ws_ingestion_task.done()}')
+        logger.debug(f'Processing task exists {ws_processing_task}')
+        logger.debug(f'Processing is running: {not ws_processing_task.done()}')
         if not ws_processing_task.done() and not ws_ingestion_task.done():
-            print('Helper returned T')
+            logger.debug('Helper returned T')
             return True
-    print('Helper returned F')
+    logger.debug('Helper returned F')
     return False
 
 if __name__ == '__main__':
     asyncio.run(run_for_duration(10))
-
-
-# Sandbox code 
-
-# def this_always_fails():
-#       print('Hello from cats')
-#       raise Exception
-
-# max_sync_retry = 3
-
-# for _ in range (max_sync_retry):
-#         try:
-#             ws_ingestion_task = this_always_fails()
-#             break
-#         except Exception as e:
-#             print(f'round {_}')
-#             continue
-# else:
-#     print('Error at the order book stream initiation')
-#     raise ('Stop trying. Ask cats')
