@@ -1,0 +1,10 @@
+{
+  "binance": {
+    "uri": "wss://stream.binance.com:9443/ws/btcusdt@depth",
+    "api": "0.0.0.0",
+    "stram_params": "0.0.0.0"
+  },
+  "order_book": {
+    "depth": "localhost"
+  }
+}
