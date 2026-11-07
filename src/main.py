@@ -4,7 +4,8 @@ import time
 import websockets
 from order_book.initialise_order_book_stream import initialise_order_book_stream
 from wb_sockets.verifying import run_verification
-from wb_sockets import run_the_subscriber
+# from wb_sockets import run_the_subscriber
+from wb_sockets import list_subscriptions
 from utils import logger as logger_config
 
 uri = 'wss://stream.binance.com:9443/ws/btcusdt@depth'
@@ -24,7 +25,8 @@ async def run_code(subscription_timeout, order_book_depth):
         logger.info("Connected to server")
         try:
             try:
-                await asyncio.wait_for(run_the_subscriber(websocket), timeout = subscription_timeout)
+                await list_subscriptions(websocket)
+                # await asyncio.wait_for(run_the_subscriber(websocket), timeout = subscription_timeout)
             except asyncio.TimeoutError:
                 logger.error('Can\'t subscribe to the requested channel')
                 raise
@@ -40,11 +42,13 @@ async def run_code(subscription_timeout, order_book_depth):
                 order_book, ws_ingestion_task, ws_processing_task = await initialise_order_book_stream(websocket, match_found, verification_snapshot_timestamp, stop_fetching_verification_snapshots)
             except Exception:
                 logger.error('Error at the initialisation stage')
-                raise
-                    
-            
+                raise      
+  
             tasks =[ws_ingestion_task, ws_processing_task]
-            await asyncio.gather(asyncio.shield(*tasks))
+            # asyncio.shield(ws_processing_task)
+            # asyncio.shield(ws_ingestion_task)
+            # await asyncio.gather(asyncio.shield(*tasks))
+            await asyncio.gather(*tasks)
 
         finally:
             logger.debug('Finally block actually runs')
@@ -92,6 +96,25 @@ async def run_for_duration(runtime, subscription_timeout = 5):
         except Exception as e:
             logger.warning(f'Restarting due to error: {e}')
             continue
+
+# async def check_current_time(runtime, start_time):
+#     t = await asyncio.wait_for(time.monotonic())
+#     if t + start_time >= runtime:
+#         return
+
+
+# async def run_for_duration(runtime, subscription_timeout = 5):
+#     start_time = time.monotonic()
+#     while time.monotonic() < start_time + runtime:
+#         try:
+#             await run_code(subscription_timeout, order_book_depth)
+#             await asyncio.wait_for(check_current_time(runtime, start_time))
+#         # except asyncio.TimeoutError:
+#         #     logger.info('Program has been stopped due to the execution timeout') 
+#         #     break   
+#         except Exception as e:
+#             logger.warning(f'Restarting due to error: {e}')
+#             continue
 
 
 def both_tasks_running(ws_ingestion_task, ws_processing_task):
